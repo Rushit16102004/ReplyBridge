@@ -1,6 +1,7 @@
 import base64
 from datetime import datetime, timedelta
 import email
+import email.utils
 from email.mime.text import MIMEText
 from typing import Dict, List, Optional, Tuple
 import httpx
