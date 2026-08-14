@@ -157,6 +157,12 @@ export const api = {
   },
   
   async checkSession(): Promise<{ authenticated: boolean; email: string; user_id: number; gmail_connected: boolean; gmail_email: string | null }> {
+    if (typeof window !== "undefined") {
+      const token = window.localStorage.getItem("session_token");
+      if (!token) {
+        return { authenticated: false, email: "", user_id: 0, gmail_connected: false, gmail_email: null };
+      }
+    }
     return apiFetch("/auth/session");
   },
   
