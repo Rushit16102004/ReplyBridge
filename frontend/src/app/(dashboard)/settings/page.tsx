@@ -85,6 +85,24 @@ export default function SettingsPage() {
     }
   };
 
+  const [resetLoading, setResetLoading] = useState(false);
+  const handleResetEmails = async () => {
+    if (!confirm("Are you sure you want to reset your email cache? This will clear all local records of your email threads and logs, and perform a fresh download from your Gmail account. No emails on your actual Gmail account will be deleted.")) {
+      return;
+    }
+    setResetLoading(true);
+    setAlert(null);
+    try {
+      await api.resetEmails();
+      setAlert({ type: "success", text: "Email cache reset successfully! Fresh sync has started." });
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch (err: any) {
+      setAlert({ type: "error", text: err.message || "Failed to reset email cache." });
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
   const handleConnectGmail = () => {
     // Redirect to backend OAuth login
     window.location.href = api.getGoogleLoginUrl();
@@ -563,7 +581,30 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        {/* 6. SUBMIT BUTTON */}
+        {/* 6. CACHE & SYNC MAINTENANCE CARD */}
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm space-y-4">
+          <h3 className="text-base font-bold text-slate-900 dark:text-white pb-3 border-b border-slate-100 dark:border-slate-800">Database & Sync Maintenance</h3>
+          <p className="text-xs text-slate-450 dark:text-slate-500">
+            If your emails show incorrect timestamps or fail to sort chronologically due to previous server timezone conflicts, you can trigger a clean cache reset. This clears locally cached threads and forces the background worker to execute a fresh download from your Gmail account. (No emails on Gmail will be deleted).
+          </p>
+          <div className="pt-2">
+            <button
+              type="button"
+              onClick={handleResetEmails}
+              disabled={resetLoading}
+              className="bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white font-bold text-sm px-5 py-2.5 rounded-xl flex items-center space-x-2 transition-all active:scale-[0.98]"
+            >
+              {resetLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Trash2 className="h-4 w-4" />
+              )}
+              <span>{resetLoading ? "Resetting Sync..." : "Reset Email Cache"}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* 7. SUBMIT BUTTON */}
         <div className="pt-2">
           <button
             type="submit"

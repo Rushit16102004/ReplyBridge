@@ -458,3 +458,25 @@ def update_thread_status(
     db.commit()
     
     return {"status": "success", "new_status": thread.status}
+
+
+@router.post("/reset")
+def reset_emails(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Clears all cached email data and logs for the current user to trigger a clean sync.
+    """
+    db.query(ScheduledReply).filter(ScheduledReply.user_id == current_user.id).delete(synchronize_session=False)
+    db.query(AuditLog).filter(AuditLog.user_id == current_user.id).delete(synchronize_session=False)
+    
+    threads = db.query(EmailThread).filter(EmailThread.user_id == current_user.id).all()
+    thread_ids = [t.thread_id for t in threads]
+    if thread_ids:
+        db.query(EmailMessage).filter(EmailMessage.thread_id.in_(thread_ids)).delete(synchronize_session=False)
+        
+    db.query(EmailThread).filter(EmailThread.user_id == current_user.id).delete(synchronize_session=False)
+    db.commit()
+    
+    return {"status": "success", "message": "Email cache cleared. Fresh sync triggered."}

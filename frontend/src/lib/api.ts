@@ -166,6 +166,10 @@ export const api = {
     return apiFetch("/auth/session");
   },
   
+  async resetEmails(): Promise<{ status: string; message: string }> {
+    return apiFetch("/emails/reset", { method: "POST" });
+  },
+  
   // Emails
   async listThreads(filters: {
     category?: string;
