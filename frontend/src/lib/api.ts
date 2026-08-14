@@ -1,0 +1,224 @@
+const BACKEND_URL = "http://127.0.0.1:8080/api";
+
+export interface Thread {
+  id: number;
+  thread_id: string;
+  subject: string;
+  snippet: string;
+  sender: string;
+  last_message_received_at: string;
+  status: string;
+  message_count: number;
+  category: string;
+  importance: string;
+  importance_score: number;
+  sensitive: boolean;
+  urgency: string;
+}
+
+export interface EmailMessage {
+  message_id: string;
+  sender: string;
+  recipient: string;
+  subject: string;
+  body_text: string;
+  body_html: string;
+  received_at: string;
+  importance: string;
+  importance_score: number;
+  category: string;
+  sentiment: string;
+  urgency: string;
+  sensitive: boolean;
+  sensitive_types: string[];
+  requires_human: boolean;
+  reason: string;
+  ai_confidence: number;
+}
+
+export interface ScheduledReply {
+  id: number;
+  reply_body: string;
+  scheduled_at: string;
+  sent_at: string | null;
+  cancelled_at: string | null;
+  status: string;
+  error_message: string | null;
+}
+
+export interface ThreadDetails {
+  id: number;
+  thread_id: string;
+  subject: string;
+  snippet: string;
+  status: string;
+  messages: EmailMessage[];
+  scheduled_reply: ScheduledReply | null;
+}
+
+export interface UserSettings {
+  auto_reply_enabled: boolean;
+  delay_minutes: number;
+  working_hours_enabled: boolean;
+  working_hours_start: string;
+  working_hours_end: string;
+  reply_categories: string[];
+  excluded_senders: string[];
+  excluded_domains: string[];
+  max_replies_per_day: number;
+  ai_tone: string;
+  max_reply_length: number;
+  signature: string;
+  custom_instructions: string;
+  blocked_categories: string[];
+}
+
+export interface AuditLog {
+  id: number;
+  thread_id: string | null;
+  message_id: string | null;
+  event_type: string;
+  description: string;
+  created_at: string;
+}
+
+// Common fetch helper with credentials (cookies)
+async function apiFetch(endpoint: string, options: RequestInit = {}) {
+  const url = `${BACKEND_URL}${endpoint}`;
+  
+  // Set default headers and credentials
+  const headers = {
+    "Content-Type": "application/json",
+    ...options.headers,
+  };
+  
+  const config = {
+    ...options,
+    headers,
+    credentials: "include" as const, // critical for session cookies
+  };
+  
+  const response = await fetch(url, config);
+  
+  if (response.status === 401) {
+    // If not authenticated, redirect or handle gracefully
+    if (typeof window !== "undefined" && !window.location.pathname.endsWith("/")) {
+      window.location.href = "/?error=session_expired";
+    }
+    throw new Error("Unauthorized");
+  }
+  
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "Unknown error");
+    throw new Error(errorText || `API error ${response.status}`);
+  }
+  
+  if (response.status === 204) {
+    return null;
+  }
+  
+  return response.json();
+}
+
+export const api = {
+  // Auth
+  getGoogleLoginUrl(): string {
+    return `${BACKEND_URL}/auth/google/login`;
+  },
+  
+  async mockLogin(): Promise<{ status: string; message: string }> {
+    return apiFetch("/auth/mock-login", { method: "POST" });
+  },
+  
+  async logout(): Promise<void> {
+    return apiFetch("/auth/logout", { method: "POST" });
+  },
+  
+  async checkSession(): Promise<{ authenticated: boolean; email: string; user_id: number; gmail_connected: boolean; gmail_email: string | null }> {
+    return apiFetch("/auth/session");
+  },
+  
+  // Emails
+  async listThreads(filters: {
+    category?: string;
+    importance?: string;
+    status?: string;
+    sensitive?: boolean;
+    search?: string;
+    limit?: number;
+    offset?: number;
+  } = {}): Promise<{
+    threads: Thread[];
+    total: number;
+    stats: {
+      total_emails: number;
+      important_emails: number;
+      sent_replies: number;
+      awaiting_reply: number;
+      blocked_sensitive: number;
+      requires_attention: number;
+    };
+  }> {
+    const params = new URLSearchParams();
+    if (filters.category) params.append("category", filters.category);
+    if (filters.importance) params.append("importance", filters.importance);
+    if (filters.status) params.append("status", filters.status);
+    if (filters.sensitive !== undefined) params.append("sensitive", String(filters.sensitive));
+    if (filters.search) params.append("search", filters.search);
+    if (filters.limit) params.append("limit", String(filters.limit));
+    if (filters.offset) params.append("offset", String(filters.offset));
+    
+    return apiFetch(`/emails/threads?${params.toString()}`);
+  },
+  
+  async getThread(threadId: string): Promise<ThreadDetails> {
+    return apiFetch(`/emails/threads/${threadId}`);
+  },
+  
+  async sendReply(threadId: string, replyBody: string): Promise<{ status: string; message: string }> {
+    return apiFetch(`/emails/threads/${threadId}/reply`, {
+      method: "POST",
+      body: JSON.stringify({ reply_body: replyBody }),
+    });
+  },
+  
+  async regenerateReply(threadId: string): Promise<{ reply_body: string; scheduled_at: string; status: string }> {
+    return apiFetch(`/emails/threads/${threadId}/regenerate-reply`, {
+      method: "POST",
+    });
+  },
+  
+  async cancelReply(threadId: string): Promise<{ status: string; message: string }> {
+    return apiFetch(`/emails/threads/${threadId}/cancel-reply`, {
+      method: "POST",
+    });
+  },
+  
+  async updateThreadStatus(threadId: string, status: string): Promise<{ status: string; new_status: string }> {
+    return apiFetch(`/emails/threads/${threadId}/status`, {
+      method: "PUT",
+      body: JSON.stringify({ status }),
+    });
+  },
+  
+  // Settings
+  async getSettings(): Promise<UserSettings> {
+    return apiFetch("/settings");
+  },
+  
+  async updateSettings(settings: Partial<UserSettings>): Promise<{ status: string; message: string }> {
+    return apiFetch("/settings", {
+      method: "PUT",
+      body: JSON.stringify(settings),
+    });
+  },
+  
+  async disconnectGmail(): Promise<{ status: string; message: string }> {
+    return apiFetch("/settings/disconnect", { method: "POST" });
+  },
+  
+  // Logs
+  async listLogs(limit = 50, offset = 0): Promise<{ logs: AuditLog[]; total: number }> {
+    return apiFetch(`/logs?limit=${limit}&offset=${offset}`);
+  }
+};
