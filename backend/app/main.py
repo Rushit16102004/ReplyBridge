@@ -11,6 +11,24 @@ from app.routes import auth, emails, settings as settings_router, logs
 # 1. Initialize Database Tables on Startup
 Base.metadata.create_all(bind=engine)
 
+# One-time migration to clear cached emails for a clean sync after date parsing fix
+import os
+if not os.path.exists(".date_fix_applied"):
+    from app.database import SessionLocal
+    from app.models import EmailMessage, EmailThread
+    db = SessionLocal()
+    try:
+        db.query(EmailMessage).delete()
+        db.query(EmailThread).delete()
+        db.commit()
+        print("Database email cache cleared for fresh sync.")
+        with open(".date_fix_applied", "w") as f:
+            f.write("fixed")
+    except Exception as e:
+        print(f"Error executing one-time date fix: {e}")
+    finally:
+        db.close()
+
 # 2. Configure Lifespan Manager for Background Threads
 @asynccontextmanager
 async def lifespan(app: FastAPI):
