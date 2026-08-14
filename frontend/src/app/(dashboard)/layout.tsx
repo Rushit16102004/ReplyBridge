@@ -36,6 +36,18 @@ export default function DashboardLayout({
   useEffect(() => {
     async function checkAuth() {
       try {
+        // 1. Capture token from URL if redirected from Google login
+        if (typeof window !== "undefined") {
+          const urlParams = new URLSearchParams(window.location.search);
+          const urlToken = urlParams.get("token");
+          if (urlToken) {
+            window.localStorage.setItem("session_token", urlToken);
+            // Clean up the token query parameter from URL bar to keep it clean
+            const newUrl = window.location.pathname;
+            window.history.replaceState({}, document.title, newUrl);
+          }
+        }
+
         const session = await api.checkSession();
         if (session.authenticated) {
           setUser({

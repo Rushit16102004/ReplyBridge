@@ -100,7 +100,7 @@ async def google_callback(code: str, response: Response, db: Session = Depends(g
         is_secure = settings.FRONTEND_URL.startswith("https")
         samesite_val = "none" if is_secure else "lax"
         
-        response = RedirectResponse(url=f"{settings.FRONTEND_URL}/dashboard")
+        response = RedirectResponse(url=f"{settings.FRONTEND_URL}/dashboard?token={jwt_token}")
         response.set_cookie(
             key="session_token",
             value=jwt_token,
@@ -358,7 +358,7 @@ def mock_login(response: Response, db: Session = Depends(get_db)):
         samesite=samesite_val,
         secure=is_secure
     )
-    return {"status": "success", "message": "Demo session started successfully"}
+    return {"status": "success", "token": jwt_token, "message": "Demo session started successfully"}
 
 
 @router.post("/logout")

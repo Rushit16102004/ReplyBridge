@@ -89,10 +89,17 @@ async function apiFetch(endpoint: string, options: RequestInit = {}) {
   const url = `${BACKEND_URL}${endpoint}`;
   
   // Set default headers and credentials
-  const headers = {
+  const headers: Record<string, any> = {
     "Content-Type": "application/json",
     ...options.headers,
   };
+  
+  if (typeof window !== "undefined") {
+    const token = window.localStorage.getItem("session_token");
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+  }
   
   const config = {
     ...options,
@@ -104,8 +111,11 @@ async function apiFetch(endpoint: string, options: RequestInit = {}) {
   
   if (response.status === 401) {
     // If not authenticated, redirect or handle gracefully
-    if (typeof window !== "undefined" && !window.location.pathname.endsWith("/")) {
-      window.location.href = "/?error=session_expired";
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem("session_token");
+      if (!window.location.pathname.endsWith("/")) {
+        window.location.href = "/?error=session_expired";
+      }
     }
     throw new Error("Unauthorized");
   }
@@ -128,12 +138,22 @@ export const api = {
     return `${BACKEND_URL}/auth/google/login`;
   },
   
-  async mockLogin(): Promise<{ status: string; message: string }> {
-    return apiFetch("/auth/mock-login", { method: "POST" });
+  async mockLogin(): Promise<{ status: string; message: string; token?: string }> {
+    const res = await apiFetch("/auth/mock-login", { method: "POST" });
+    if (res && res.token && typeof window !== "undefined") {
+      window.localStorage.setItem("session_token", res.token);
+    }
+    return res;
   },
   
   async logout(): Promise<void> {
-    return apiFetch("/auth/logout", { method: "POST" });
+    try {
+      await apiFetch("/auth/logout", { method: "POST" });
+    } finally {
+      if (typeof window !== "undefined") {
+        window.localStorage.removeItem("session_token");
+      }
+    }
   },
   
   async checkSession(): Promise<{ authenticated: boolean; email: string; user_id: number; gmail_connected: boolean; gmail_email: string | null }> {
