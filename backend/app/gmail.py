@@ -1,5 +1,5 @@
 import base64
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import email
 import email.utils
 from email.mime.text import MIMEText
@@ -136,7 +136,7 @@ def get_message_details(service, user_id: str, msg_id: str) -> Optional[dict]:
                 # Use email.utils.parsedate_to_datetime to parse RFC 2822 dates properly
                 parsed_date = email.utils.parsedate_to_datetime(date_str)
                 # Convert to naive UTC datetime
-                received_at = parsed_date.astimezone(timedelta(0)).replace(tzinfo=None)
+                received_at = parsed_date.astimezone(timezone.utc).replace(tzinfo=None)
             except Exception:
                 pass
                 
