@@ -97,14 +97,17 @@ async def google_callback(code: str, response: Response, db: Session = Depends(g
         jwt_token = create_access_token(data={"sub": user.email})
         
         # 6. Set HTTP-only Cookie
+        is_secure = settings.FRONTEND_URL.startswith("https")
+        samesite_val = "none" if is_secure else "lax"
+        
         response = RedirectResponse(url=f"{settings.FRONTEND_URL}/dashboard")
         response.set_cookie(
             key="session_token",
             value=jwt_token,
             httponly=True,
             max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-            samesite="lax",
-            secure=False
+            samesite=samesite_val,
+            secure=is_secure
         )
         return response
         
@@ -344,13 +347,16 @@ def mock_login(response: Response, db: Session = Depends(get_db)):
 
     # Create session cookie
     jwt_token = create_access_token(data={"sub": user.email})
+    is_secure = settings.FRONTEND_URL.startswith("https")
+    samesite_val = "none" if is_secure else "lax"
+    
     response.set_cookie(
         key="session_token",
         value=jwt_token,
         httponly=True,
         max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-        samesite="lax",
-        secure=False
+        samesite=samesite_val,
+        secure=is_secure
     )
     return {"status": "success", "message": "Demo session started successfully"}
 
@@ -360,8 +366,15 @@ def logout(response: Response, current_user: User = Depends(get_current_user)):
     """
     Clears the session token cookie and logs the user out.
     """
+    is_secure = settings.FRONTEND_URL.startswith("https")
+    samesite_val = "none" if is_secure else "lax"
+    
     response = Response(status_code=status.HTTP_200_OK)
-    response.delete_cookie(key="session_token")
+    response.delete_cookie(
+        key="session_token",
+        samesite=samesite_val,
+        secure=is_secure
+    )
     return {"message": "Successfully logged out"}
 
 
