@@ -95,9 +95,10 @@ export default function DashboardLayout({
   const handleLogout = async () => {
     try {
       await api.logout();
-      router.push("/");
     } catch (err) {
       console.error("Logout failed", err);
+    } finally {
+      router.push("/");
     }
   };
 
