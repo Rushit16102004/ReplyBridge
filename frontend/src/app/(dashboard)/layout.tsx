@@ -27,6 +27,18 @@ export default function DashboardLayout({
   const router = useRouter();
   const pathname = usePathname();
   
+  // 1. Capture token synchronously during initial render to preempt child useEffect hooks
+  if (typeof window !== "undefined") {
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlToken = urlParams.get("token");
+    if (urlToken) {
+      window.localStorage.setItem("session_token", urlToken);
+      // Clean up the token query parameter from URL bar to keep it clean
+      const newUrl = window.location.pathname;
+      window.history.replaceState({}, document.title, newUrl);
+    }
+  }
+  
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<{ email: string; gmail_connected: boolean; gmail_email: string | null } | null>(null);
   const [darkMode, setDarkMode] = useState(false);
@@ -36,18 +48,6 @@ export default function DashboardLayout({
   useEffect(() => {
     async function checkAuth() {
       try {
-        // 1. Capture token from URL if redirected from Google login
-        if (typeof window !== "undefined") {
-          const urlParams = new URLSearchParams(window.location.search);
-          const urlToken = urlParams.get("token");
-          if (urlToken) {
-            window.localStorage.setItem("session_token", urlToken);
-            // Clean up the token query parameter from URL bar to keep it clean
-            const newUrl = window.location.pathname;
-            window.history.replaceState({}, document.title, newUrl);
-          }
-        }
-
         const session = await api.checkSession();
         if (session.authenticated) {
           setUser({
