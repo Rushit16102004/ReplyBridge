@@ -369,7 +369,6 @@ def logout(response: Response, current_user: User = Depends(get_current_user)):
     is_secure = settings.FRONTEND_URL.startswith("https")
     samesite_val = "none" if is_secure else "lax"
     
-    response = Response(status_code=status.HTTP_200_OK)
     response.delete_cookie(
         key="session_token",
         samesite=samesite_val,
