@@ -11,23 +11,27 @@ from app.routes import auth, emails, settings as settings_router, logs
 # 1. Initialize Database Tables on Startup
 Base.metadata.create_all(bind=engine)
 
-# One-time migration to clear cached emails for a clean sync after date parsing fix (v3 for PostgreSQL internalDate)
+# One-time migration to clear cached emails and recreate tables for new schema (v4 multi-account)
 import os
-if not os.path.exists(".date_fix_applied_v3"):
-    from app.database import SessionLocal
+if not os.path.exists(".date_fix_applied_v4"):
+    from app.database import SessionLocal, engine
     from app.models import EmailMessage, EmailThread, ScheduledReply, AuditLog
     db = SessionLocal()
     try:
-        db.query(ScheduledReply).delete()
-        db.query(AuditLog).delete()
-        db.query(EmailMessage).delete()
-        db.query(EmailThread).delete()
-        db.commit()
-        print("Database email cache cleared for fresh sync.")
-        with open(".date_fix_applied_v3", "w") as f:
+        # Drop child tables first to respect constraints, then drop parents
+        ScheduledReply.__table__.drop(bind=engine, checkfirst=True)
+        AuditLog.__table__.drop(bind=engine, checkfirst=True)
+        EmailMessage.__table__.drop(bind=engine, checkfirst=True)
+        EmailThread.__table__.drop(bind=engine, checkfirst=True)
+        
+        # Recreate tables immediately with new schema columns
+        Base.metadata.create_all(bind=engine)
+        print("Database tables recreated successfully for v4 multi-account schema.")
+        
+        with open(".date_fix_applied_v4", "w") as f:
             f.write("fixed")
     except Exception as e:
-        print(f"Error executing one-time date fix: {e}")
+        print(f"Error executing v4 table recreation migration: {e}")
     finally:
         db.close()
 

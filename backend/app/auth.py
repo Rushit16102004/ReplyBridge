@@ -75,7 +75,7 @@ OAUTH_SCOPES = [
     "https://www.googleapis.com/auth/gmail.send"
 ]
 
-def get_google_auth_url() -> str:
+def get_google_auth_url(state: Optional[str] = None) -> str:
     """
     Constructs the Google OAuth authorization URL.
     Crucial options:
@@ -95,6 +95,8 @@ def get_google_auth_url() -> str:
         f"access_type=offline&"
         f"prompt=consent"
     )
+    if state:
+        url += f"&state={state}"
     return url
 
 async def exchange_google_code(code: str) -> Dict:

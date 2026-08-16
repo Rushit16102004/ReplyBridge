@@ -13,6 +13,7 @@ router = APIRouter(prefix="/logs", tags=["Audit Logs"])
 def list_logs(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    active_email: Optional[str] = Query(None),
     limit: int = 50,
     offset: int = 0
 ):
@@ -20,6 +21,8 @@ def list_logs(
     Returns audit/activity logs for the current user, ordered newest first.
     """
     query = db.query(AuditLog).filter(AuditLog.user_id == current_user.id)
+    if active_email:
+        query = query.filter(AuditLog.gmail_email == active_email)
     total = query.count()
     logs = query.order_by(desc(AuditLog.created_at)).offset(offset).limit(limit).all()
     

@@ -11,7 +11,6 @@ import {
   CheckCircle2, 
   Lock, 
   Mail, 
-  Play, 
   AlertCircle 
 } from "lucide-react";
 import { api } from "@/lib/api";
@@ -19,7 +18,6 @@ import { api } from "@/lib/api";
 export default function LandingPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
-  const [demoLoading, setDemoLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
   useEffect(() => {
@@ -51,18 +49,6 @@ export default function LandingPage() {
     window.location.href = api.getGoogleLoginUrl();
   };
 
-  const handleSandboxLogin = async () => {
-    setDemoLoading(true);
-    setErrorMsg("");
-    try {
-      await api.mockLogin();
-      router.push("/dashboard");
-    } catch (err: any) {
-      setErrorMsg(err.message || "Failed to initialize demo sandbox.");
-      setDemoLoading(false);
-    }
-  };
-
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col justify-between selection:bg-emerald-500/35">
       {/* Navigation Header */}
@@ -77,15 +63,8 @@ export default function LandingPage() {
         </div>
         <div className="flex items-center space-x-4">
           <button 
-            onClick={handleSandboxLogin}
-            disabled={demoLoading || loading}
-            className="hidden sm:inline-flex items-center px-4 py-2 border border-slate-200 dark:border-slate-800 rounded-xl text-sm font-semibold hover:bg-slate-100 dark:hover:bg-slate-900 transition-all text-slate-700 dark:text-slate-300"
-          >
-            {demoLoading ? "Starting Demo..." : "Developer Sandbox"}
-          </button>
-          <button 
             onClick={handleGoogleLogin}
-            disabled={loading || demoLoading}
+            disabled={loading}
             className="bg-slate-900 dark:bg-white text-white dark:text-slate-950 px-4.5 py-2 rounded-xl text-sm font-semibold hover:bg-slate-800 dark:hover:bg-slate-100 transition-all shadow-sm flex items-center space-x-2"
           >
             <span>Get Started</span>
@@ -122,20 +101,11 @@ export default function LandingPage() {
           <div className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4 pt-2">
             <button
               onClick={handleGoogleLogin}
-              disabled={loading || demoLoading}
+              disabled={loading}
               className="w-full sm:w-auto bg-emerald-500 text-white hover:bg-emerald-600 px-8 py-4 rounded-2xl font-bold shadow-lg shadow-emerald-500/20 transition-all flex items-center justify-center space-x-3 text-base active:scale-[0.98] disabled:opacity-50"
             >
               <span>Continue with Google</span>
               <ArrowRight className="h-5 w-5" />
-            </button>
-
-            <button
-              onClick={handleSandboxLogin}
-              disabled={demoLoading || loading}
-              className="w-full sm:w-auto bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-850 hover:bg-slate-50 dark:hover:bg-slate-800 px-8 py-4 rounded-2xl font-bold transition-all flex items-center justify-center space-x-2 text-base active:scale-[0.98]"
-            >
-              <Play className="h-4 w-4 text-emerald-500 fill-emerald-500" />
-              <span>{demoLoading ? "Starting Demo..." : "See Sandbox Demo"}</span>
             </button>
           </div>
 

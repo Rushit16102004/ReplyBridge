@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { 
   History, 
   RefreshCw, 
@@ -20,6 +21,9 @@ import {
 import { api, AuditLog } from "@/lib/api";
 
 export default function ActivityPage() {
+  const searchParams = useSearchParams();
+  const activeEmail = searchParams.get("email") || (typeof window !== "undefined" ? localStorage.getItem("active_email") : null);
+
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -30,7 +34,7 @@ export default function ActivityPage() {
     setLoading(true);
     try {
       const offset = (page - 1) * limit;
-      const response = await api.listLogs(limit, offset);
+      const response = await api.listLogs(activeEmail || undefined, limit, offset);
       setLogs(response.logs);
       setTotal(response.total);
     } catch (err) {
@@ -38,7 +42,7 @@ export default function ActivityPage() {
     } finally {
       setLoading(false);
     }
-  }, [page]);
+  }, [page, activeEmail]);
 
   useEffect(() => {
     loadLogs();

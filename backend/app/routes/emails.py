@@ -33,6 +33,7 @@ def list_threads(
     status: Optional[str] = Query(None),
     sensitive: Optional[bool] = Query(None),
     search: Optional[str] = Query(None),
+    active_email: Optional[str] = Query(None),
     limit: int = 50,
     offset: int = 0
 ):
@@ -40,6 +41,8 @@ def list_threads(
     Lists and filters email threads for the current user.
     """
     query = db.query(EmailThread).filter(EmailThread.user_id == current_user.id)
+    if active_email:
+        query = query.filter(EmailThread.gmail_email == active_email)
     
     # 1. Joins for filtering by message fields
     if category or importance or sensitive is not None or search:
@@ -462,21 +465,31 @@ def update_thread_status(
 
 @router.post("/reset")
 def reset_emails(
+    active_email: Optional[str] = Query(None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
-    Clears all cached email data and logs for the current user to trigger a clean sync.
+    Clears cached email data and logs for the current user's specific email to trigger a clean sync.
     """
-    db.query(ScheduledReply).filter(ScheduledReply.user_id == current_user.id).delete(synchronize_session=False)
-    db.query(AuditLog).filter(AuditLog.user_id == current_user.id).delete(synchronize_session=False)
+    reply_query = db.query(ScheduledReply).filter(ScheduledReply.user_id == current_user.id)
+    audit_query = db.query(AuditLog).filter(AuditLog.user_id == current_user.id)
+    thread_query = db.query(EmailThread).filter(EmailThread.user_id == current_user.id)
     
-    threads = db.query(EmailThread).filter(EmailThread.user_id == current_user.id).all()
+    if active_email:
+        reply_query = reply_query.filter(ScheduledReply.gmail_email == active_email)
+        audit_query = audit_query.filter(AuditLog.gmail_email == active_email)
+        thread_query = thread_query.filter(EmailThread.gmail_email == active_email)
+        
+    reply_query.delete(synchronize_session=False)
+    audit_query.delete(synchronize_session=False)
+    
+    threads = thread_query.all()
     thread_ids = [t.thread_id for t in threads]
     if thread_ids:
         db.query(EmailMessage).filter(EmailMessage.thread_id.in_(thread_ids)).delete(synchronize_session=False)
         
-    db.query(EmailThread).filter(EmailThread.user_id == current_user.id).delete(synchronize_session=False)
+    thread_query.delete(synchronize_session=False)
     db.commit()
     
     return {"status": "success", "message": "Email cache cleared. Fresh sync triggered."}

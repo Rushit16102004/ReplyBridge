@@ -15,7 +15,8 @@ import {
   Loader2,
   Lock,
   Menu,
-  X
+  X,
+  ChevronDown
 } from "lucide-react";
 import { api } from "@/lib/api";
 
@@ -40,7 +41,8 @@ export default function DashboardLayout({
   }
   
   const [loading, setLoading] = useState(true);
-  const [user, setUser] = useState<{ email: string; gmail_connected: boolean; gmail_email: string | null } | null>(null);
+  const [user, setUser] = useState<{ email: string; gmail_connected: boolean; gmail_email: string | null; gmail_emails: string[] } | null>(null);
+  const [activeEmail, setActiveEmail] = useState<string | null>(null);
   const [darkMode, setDarkMode] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -50,17 +52,28 @@ export default function DashboardLayout({
       try {
         const session = await api.checkSession();
         if (session.authenticated) {
+          const emails = session.gmail_emails || [];
           setUser({
             email: session.email,
             gmail_connected: session.gmail_connected,
-            gmail_email: session.gmail_email
+            gmail_email: session.gmail_email,
+            gmail_emails: emails
           });
+          
+          let active = localStorage.getItem("active_email");
+          if (!active || !emails.includes(active)) {
+            active = session.gmail_email || (emails.length > 0 ? emails[0] : null);
+            if (active) {
+              localStorage.setItem("active_email", active);
+            }
+          }
+          setActiveEmail(active);
         } else {
-          router.push("/");
+          window.location.href = "/";
         }
       } catch (err) {
         console.error("Session check failed", err);
-        router.push("/");
+        window.location.href = "/";
       } finally {
         setLoading(false);
       }
@@ -79,6 +92,12 @@ export default function DashboardLayout({
       document.documentElement.classList.remove("dark");
     }
   }, [router]);
+
+  const handleSwitchAccount = (email: string) => {
+    localStorage.setItem("active_email", email);
+    setActiveEmail(email);
+    router.push(`${pathname}?email=${encodeURIComponent(email)}`);
+  };
 
   const toggleDarkMode = () => {
     if (darkMode) {
@@ -155,6 +174,31 @@ export default function DashboardLayout({
             <X className="h-5 w-5 text-slate-500 dark:text-slate-400" />
           </button>
         </div>
+
+        {/* Account Selector Section */}
+        {user && user.gmail_connected && user.gmail_emails && user.gmail_emails.length > 0 && (
+          <div className="px-4 pt-4 pb-2 border-b border-slate-100 dark:border-slate-800">
+            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-1.5 px-2">
+              Active Gmail Inbox
+            </label>
+            <div className="relative">
+              <select
+                value={activeEmail || ""}
+                onChange={(e) => handleSwitchAccount(e.target.value)}
+                className="w-full pl-3 pr-8 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-350 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent appearance-none cursor-pointer"
+              >
+                {user.gmail_emails.map((email) => (
+                  <option key={email} value={email}>
+                    {email}
+                  </option>
+                ))}
+              </select>
+              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-slate-500 dark:text-slate-400">
+                <ChevronDown className="h-3.5 w-3.5" />
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Sidebar Navigation */}
         <nav className="flex-1 space-y-1.5 px-4 py-6 overflow-y-auto">

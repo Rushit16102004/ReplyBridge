@@ -104,24 +104,32 @@ def update_user_settings(
     return {"status": "success", "message": "Settings updated successfully"}
 
 
-@router.post("/disconnect")
-def disconnect_gmail(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+@router.post("/disconnect/{email}")
+def disconnect_gmail(
+    email: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """
-    Disconnects the Gmail OAuth connection, halts automatic processing,
-    and cancels all scheduled replies.
+    Disconnects a specific Gmail OAuth connection, halts automatic processing,
+    and cancels all scheduled replies associated with it.
     """
-    oauth_account = db.query(OAuthAccount).filter(OAuthAccount.user_id == current_user.id).first()
+    oauth_account = db.query(OAuthAccount).filter(
+        OAuthAccount.user_id == current_user.id,
+        OAuthAccount.email == email
+    ).first()
     if not oauth_account:
-        raise HTTPException(status_code=404, detail="No Gmail account connected")
+        raise HTTPException(status_code=404, detail=f"No connected Gmail account found for {email}")
         
     connected_email = oauth_account.email
     
     # 1. Delete OAuth Account to sever access
     db.delete(oauth_account)
     
-    # 2. Cancel all pending scheduled replies
+    # 2. Cancel all pending scheduled replies for this specific email
     pending_replies = db.query(ScheduledReply).filter(
         ScheduledReply.user_id == current_user.id,
+        ScheduledReply.gmail_email == email,
         ScheduledReply.status == "pending"
     ).all()
     
@@ -132,10 +140,11 @@ def disconnect_gmail(current_user: User = Depends(get_current_user), db: Session
     # 3. Save audit log
     audit = AuditLog(
         user_id=current_user.id,
+        gmail_email=connected_email,
         event_type="disconnect",
         description=f"Gmail account disconnected: {connected_email}. Processors and scheduled replies terminated."
     )
     db.add(audit)
     db.commit()
     
-    return {"status": "success", "message": "Gmail integration disconnected successfully"}
+    return {"status": "success", "message": f"Gmail integration {connected_email} disconnected successfully"}

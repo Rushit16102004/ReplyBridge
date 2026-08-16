@@ -134,16 +134,9 @@ async function apiFetch(endpoint: string, options: RequestInit = {}) {
 
 export const api = {
   // Auth
-  getGoogleLoginUrl(): string {
-    return `${BACKEND_URL}/auth/google/login`;
-  },
-  
-  async mockLogin(): Promise<{ status: string; message: string; token?: string }> {
-    const res = await apiFetch("/auth/mock-login", { method: "POST" });
-    if (res && res.token && typeof window !== "undefined") {
-      window.localStorage.setItem("session_token", res.token);
-    }
-    return res;
+  getGoogleLoginUrl(state?: string): string {
+    const url = `${BACKEND_URL}/auth/google/login`;
+    return state ? `${url}?state=${encodeURIComponent(state)}` : url;
   },
   
   async logout(): Promise<void> {
@@ -156,18 +149,19 @@ export const api = {
     }
   },
   
-  async checkSession(): Promise<{ authenticated: boolean; email: string; user_id: number; gmail_connected: boolean; gmail_email: string | null }> {
+  async checkSession(): Promise<{ authenticated: boolean; email: string; user_id: number; gmail_connected: boolean; gmail_email: string | null; gmail_emails?: string[] }> {
     if (typeof window !== "undefined") {
       const token = window.localStorage.getItem("session_token");
       if (!token) {
-        return { authenticated: false, email: "", user_id: 0, gmail_connected: false, gmail_email: null };
+        return { authenticated: false, email: "", user_id: 0, gmail_connected: false, gmail_email: null, gmail_emails: [] };
       }
     }
     return apiFetch("/auth/session");
   },
   
-  async resetEmails(): Promise<{ status: string; message: string }> {
-    return apiFetch("/emails/reset", { method: "POST" });
+  async resetEmails(activeEmail?: string): Promise<{ status: string; message: string }> {
+    const url = activeEmail ? `/emails/reset?active_email=${encodeURIComponent(activeEmail)}` : "/emails/reset";
+    return apiFetch(url, { method: "POST" });
   },
   
   // Emails
@@ -177,6 +171,7 @@ export const api = {
     status?: string;
     sensitive?: boolean;
     search?: string;
+    active_email?: string;
     limit?: number;
     offset?: number;
   } = {}): Promise<{
@@ -197,6 +192,7 @@ export const api = {
     if (filters.status) params.append("status", filters.status);
     if (filters.sensitive !== undefined) params.append("sensitive", String(filters.sensitive));
     if (filters.search) params.append("search", filters.search);
+    if (filters.active_email) params.append("active_email", filters.active_email);
     if (filters.limit) params.append("limit", String(filters.limit));
     if (filters.offset) params.append("offset", String(filters.offset));
     
@@ -245,12 +241,13 @@ export const api = {
     });
   },
   
-  async disconnectGmail(): Promise<{ status: string; message: string }> {
-    return apiFetch("/settings/disconnect", { method: "POST" });
+  async disconnectGmail(email: string): Promise<{ status: string; message: string }> {
+    return apiFetch(`/settings/disconnect/${encodeURIComponent(email)}`, { method: "POST" });
   },
   
   // Logs
-  async listLogs(limit = 50, offset = 0): Promise<{ logs: AuditLog[]; total: number }> {
-    return apiFetch(`/logs?limit=${limit}&offset=${offset}`);
+  async listLogs(activeEmail?: string, limit = 50, offset = 0): Promise<{ logs: AuditLog[]; total: number }> {
+    const emailParam = activeEmail ? `&active_email=${encodeURIComponent(activeEmail)}` : "";
+    return apiFetch(`/logs?limit=${limit}&offset=${offset}${emailParam}`);
   }
 };

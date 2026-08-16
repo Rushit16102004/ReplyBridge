@@ -20,6 +20,7 @@ import { api, UserSettings } from "@/lib/api";
 export default function SettingsPage() {
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [gmailEmail, setGmailEmail] = useState<string | null>(null);
+  const [gmailEmails, setGmailEmails] = useState<string[]>([]);
   const [gmailConnected, setGmailConnected] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saveLoading, setSaveLoading] = useState(false);
@@ -38,6 +39,7 @@ export default function SettingsPage() {
         const session = await api.checkSession();
         setGmailConnected(session.gmail_connected);
         setGmailEmail(session.gmail_email);
+        setGmailEmails(session.gmail_emails || []);
         
         const config = await api.getSettings();
         setSettings(config);
@@ -48,6 +50,16 @@ export default function SettingsPage() {
       }
     }
     loadData();
+
+    // Check if redirect query string has 'added=true'
+    if (typeof window !== "undefined") {
+      const urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.get("added") === "true") {
+        setAlert({ type: "success", text: "New Gmail account connected successfully!" });
+        const newUrl = window.location.pathname;
+        window.history.replaceState({}, document.title, newUrl);
+      }
+    }
   }, []);
 
   const handleSaveSettings = async (e: React.FormEvent) => {
@@ -67,17 +79,27 @@ export default function SettingsPage() {
     }
   };
 
-  const handleDisconnectGmail = async () => {
-    if (!confirm("Are you sure you want to disconnect Gmail? This will halt all email syncing and scheduled auto-replies.")) {
+  const handleDisconnectGmail = async (email: string) => {
+    if (!confirm(`Are you sure you want to disconnect Gmail account ${email}? This will halt syncing and cancel scheduled replies for this address.`)) {
       return;
     }
     setSaveLoading(true);
     setAlert(null);
     try {
-      await api.disconnectGmail();
-      setGmailConnected(false);
-      setGmailEmail(null);
-      setAlert({ type: "success", text: "Gmail account successfully disconnected." });
+      await api.disconnectGmail(email);
+      
+      const session = await api.checkSession();
+      setGmailConnected(session.gmail_connected);
+      setGmailEmail(session.gmail_email);
+      setGmailEmails(session.gmail_emails || []);
+      
+      // Clear active selection from localStorage if disconnected
+      const active = localStorage.getItem("active_email");
+      if (active === email) {
+        localStorage.removeItem("active_email");
+      }
+      
+      setAlert({ type: "success", text: `Gmail account ${email} successfully disconnected.` });
     } catch (err: any) {
       setAlert({ type: "error", text: err.message || "Failed to disconnect Gmail." });
     } finally {
@@ -87,13 +109,15 @@ export default function SettingsPage() {
 
   const [resetLoading, setResetLoading] = useState(false);
   const handleResetEmails = async () => {
-    if (!confirm("Are you sure you want to reset your email cache? This will clear all local records of your email threads and logs, and perform a fresh download from your Gmail account. No emails on your actual Gmail account will be deleted.")) {
+    const active = localStorage.getItem("active_email") || gmailEmail;
+    if (!active) return;
+    if (!confirm(`Are you sure you want to reset your email cache for ${active}? This will clear local records and logs for this account, and perform a fresh download. No emails on your actual Gmail account will be deleted.`)) {
       return;
     }
     setResetLoading(true);
     setAlert(null);
     try {
-      await api.resetEmails();
+      await api.resetEmails(active);
       setAlert({ type: "success", text: "Email cache reset successfully! Fresh sync has started." });
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (err: any) {
@@ -104,8 +128,8 @@ export default function SettingsPage() {
   };
 
   const handleConnectGmail = () => {
-    // Redirect to backend OAuth login
-    window.location.href = api.getGoogleLoginUrl();
+    const token = typeof window !== "undefined" ? window.localStorage.getItem("session_token") : null;
+    window.location.href = api.getGoogleLoginUrl(token || undefined);
   };
 
   // Add Item Helpers
@@ -218,28 +242,61 @@ export default function SettingsPage() {
 
       {/* 1. GMAIL OAUTH CONNECTION STATUS */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm space-y-4">
-        <h3 className="text-base font-bold text-slate-900 dark:text-white pb-3 border-b border-slate-100 dark:border-slate-800">Gmail Integration</h3>
-        
-        {gmailConnected ? (
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="space-y-1">
-              <div className="flex items-center space-x-2 text-emerald-600 dark:text-emerald-400 text-sm font-bold">
-                <Check className="h-4 w-4 shrink-0" />
-                <span>✓ Connected to Google Cloud</span>
-              </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                AI responder is actively monitoring Gmail address: <span className="font-semibold text-slate-750 dark:text-slate-200">{gmailEmail}</span>
-              </p>
-            </div>
-            
+        <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+          <h3 className="text-base font-bold text-slate-900 dark:text-white">Gmail Integration</h3>
+          {gmailConnected && (
             <button
               type="button"
-              onClick={handleDisconnectGmail}
-              className="bg-red-50 hover:bg-red-100 text-red-600 dark:bg-red-950/20 dark:hover:bg-red-950/40 dark:text-red-405 px-4.5 py-2.5 rounded-xl text-xs font-bold transition-all border border-red-100 dark:border-red-900/30 flex items-center justify-center space-x-2"
+              onClick={handleConnectGmail}
+              className="inline-flex items-center space-x-1.5 text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors"
             >
-              <Trash2 className="h-4 w-4" />
-              <span>Disconnect Gmail</span>
+              <Plus className="h-3.5 w-3.5" />
+              <span>Add Other Account</span>
             </button>
+          )}
+        </div>
+        
+        {gmailConnected && gmailEmails.length > 0 ? (
+          <div className="space-y-4">
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              The following Gmail accounts are linked to this session. You can switch between active inboxes from the sidebar.
+            </p>
+            <div className="divide-y divide-slate-105 dark:divide-slate-800 border border-slate-100 dark:border-slate-800 rounded-xl overflow-hidden">
+              {gmailEmails.map((email) => {
+                const activeFromStorage = typeof window !== "undefined" ? window.localStorage.getItem("active_email") : null;
+                const isActive = email === (activeFromStorage || gmailEmail);
+                return (
+                  <div key={email} className={`flex items-center justify-between px-4 py-3.5 transition-colors ${isActive ? "bg-emerald-50/5 dark:bg-emerald-950/10" : "bg-white dark:bg-slate-900"}`}>
+                    <div className="flex items-center space-x-3 truncate">
+                      {isActive ? (
+                        <div className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white text-[10px] font-bold shadow-sm shrink-0">
+                          ✓
+                        </div>
+                      ) : (
+                        <div className="h-2 w-2 rounded-full bg-slate-300 dark:bg-slate-700 shrink-0" />
+                      )}
+                      <span className={`text-sm font-semibold truncate ${isActive ? "text-slate-850 dark:text-white" : "text-slate-600 dark:text-slate-400"}`}>
+                        {email}
+                      </span>
+                      {isActive && (
+                        <span className="inline-flex items-center rounded-full bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-250 dark:border-emerald-900/50 px-2 py-0.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 shrink-0">
+                          Active Selection
+                        </span>
+                      )}
+                    </div>
+                    
+                    <button
+                      type="button"
+                      onClick={() => handleDisconnectGmail(email)}
+                      className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 rounded-lg p-1.5 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all shrink-0"
+                      title={`Disconnect ${email}`}
+                    >
+                      <Trash2 className="h-4.5 w-4.5" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         ) : (
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">

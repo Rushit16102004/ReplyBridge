@@ -37,44 +37,20 @@ def is_within_working_hours(settings_obj: Settings, email_time: datetime) -> boo
         return True
 
 
-def sync_user_inbox(user: User, db: Session):
+def sync_user_inbox(user: User, oauth_account: OAuthAccount, db: Session):
     """
-    Syncs the recent Gmail messages for a single user, performs AI analysis,
-    and schedules replies if eligible.
+    Syncs the recent Gmail messages for a single user's specific OAuth account,
+    performs AI analysis, and schedules replies if eligible.
     """
-    oauth_account = db.query(OAuthAccount).filter(OAuthAccount.user_id == user.id).first()
-    if not oauth_account:
-        return
-
     try:
         service = get_gmail_service(oauth_account, db)
     except Exception as e:
-        print(f"Failed to get Gmail service for user {user.email}: {e}")
+        print(f"Failed to get Gmail service for user {user.email} account {oauth_account.email}: {e}")
         return
 
     try:
-        # Fetch user profile to know their email address
-        profile = service.users().getProfile(userId="me").execute()
-        user_email = profile.get("emailAddress", user.email)
-        
-        # 1. Fetch recent messages in inbox (limit to last 15 to stay light)
-        results = service.users().messages().list(userId="me", maxResults=15, q="is:inbox").execute()
-        messages = results.get("messages", [])
-        
-        for msg in messages:
-            msg_id = msg["id"]
-            thread_id = msg["threadId"]
+            user_email = oauth_account.email
             
-            # Check if this message already exists in database
-            db_message = db.query(EmailMessage).filter(EmailMessage.message_id == msg_id).first()
-            if db_message:
-                continue # Already processed
-                
-            # Fetch full details of the message
-            details = get_message_details(service, "me", msg_id)
-            if not details:
-                continue
-                
             # Safety: Ensure the sender is NOT the user themselves
             sender_email = details["sender"]
             if user_email.lower() in sender_email.lower():
@@ -82,11 +58,15 @@ def sync_user_inbox(user: User, db: Session):
                 continue
 
             # Ensure EmailThread exists in DB
-            db_thread = db.query(EmailThread).filter(EmailThread.thread_id == thread_id).first()
+            db_thread = db.query(EmailThread).filter(
+                EmailThread.thread_id == thread_id,
+                EmailThread.user_id == user.id
+            ).first()
             if not db_thread:
                 db_thread = EmailThread(
                     user_id=user.id,
                     thread_id=thread_id,
+                    gmail_email=oauth_account.email,
                     subject=details["subject"],
                     snippet=details["snippet"],
                     last_message_received_at=details["received_at"],
@@ -121,6 +101,7 @@ def sync_user_inbox(user: User, db: Session):
             new_msg = EmailMessage(
                 thread_id=thread_id,
                 message_id=msg_id,
+                gmail_email=oauth_account.email,
                 sender=details["sender"],
                 recipient=details["recipient"],
                 subject=details["subject"],
@@ -150,6 +131,7 @@ def sync_user_inbox(user: User, db: Session):
                 user_id=user.id,
                 thread_id=thread_id,
                 message_id=msg_id,
+                gmail_email=oauth_account.email,
                 event_type="received",
                 description=f"Received email from {details['sender']}. Subject: '{details['subject']}'"
             )
@@ -159,6 +141,7 @@ def sync_user_inbox(user: User, db: Session):
                 user_id=user.id,
                 thread_id=thread_id,
                 message_id=msg_id,
+                gmail_email=oauth_account.email,
                 event_type="analyzed",
                 description=f"AI Analysis: Importance={analysis.importance} ({analysis.importance_score}/100), Category={analysis.category}, Sensitive={analysis.sensitive}"
             )
@@ -254,6 +237,7 @@ def sync_user_inbox(user: User, db: Session):
                     user_id=user.id,
                     thread_id=thread_id,
                     message_id=msg_id,
+                    gmail_email=oauth_account.email,
                     reply_body=reply_body,
                     scheduled_at=scheduled_time,
                     status="pending"
@@ -267,6 +251,7 @@ def sync_user_inbox(user: User, db: Session):
                     user_id=user.id,
                     thread_id=thread_id,
                     message_id=msg_id,
+                    gmail_email=oauth_account.email,
                     event_type="scheduled",
                     description=f"Auto reply scheduled for {scheduled_time.strftime('%Y-%m-%d %H:%M:%S')} UTC. Delay={delay}m. Working hours={within_hours}."
                 )
@@ -296,7 +281,10 @@ def process_scheduled_replies(db: Session):
     
     for reply in pending_replies:
         user = db.query(User).filter(User.id == reply.user_id).first()
-        oauth_account = db.query(OAuthAccount).filter(OAuthAccount.user_id == reply.user_id).first()
+        oauth_account = db.query(OAuthAccount).filter(
+            OAuthAccount.user_id == reply.user_id,
+            OAuthAccount.email == reply.gmail_email
+        ).first()
         
         if not user or not oauth_account:
             reply.status = "failed"
@@ -315,6 +303,7 @@ def process_scheduled_replies(db: Session):
                 user_id=user.id,
                 thread_id=reply.thread_id,
                 message_id=reply.message_id,
+                gmail_email=reply.gmail_email,
                 event_type="cancelled",
                 description="Auto-reply cancelled because auto-reply settings were disabled."
             )
@@ -428,6 +417,7 @@ def process_scheduled_replies(db: Session):
                 user_id=user.id,
                 thread_id=reply.thread_id,
                 message_id=reply.message_id,
+                gmail_email=reply.gmail_email,
                 event_type="sent",
                 description=f"Auto acknowledgement sent to {orig_sender or trigger_db_msg.sender}."
             )
@@ -443,6 +433,7 @@ def process_scheduled_replies(db: Session):
                 user_id=user.id,
                 thread_id=reply.thread_id,
                 message_id=reply.message_id,
+                gmail_email=reply.gmail_email,
                 event_type="failed",
                 description=f"Failed to send auto-reply: {e}"
             )
@@ -467,10 +458,12 @@ def sync_inboxes_thread_loop():
             for user in users:
                 if stop_event.is_set():
                     break
-                # Only sync users who have an OAuth account connected
-                has_oauth = db.query(OAuthAccount).filter(OAuthAccount.user_id == user.id).first()
-                if has_oauth:
-                    sync_user_inbox(user, db)
+                # Sync each connected OAuth account for the user sequentially
+                oauth_accounts = db.query(OAuthAccount).filter(OAuthAccount.user_id == user.id).all()
+                for oauth in oauth_accounts:
+                    if stop_event.is_set():
+                        break
+                    sync_user_inbox(user, oauth, db)
         except Exception as e:
             print(f"Error in inbox sync loop: {e}")
         finally:

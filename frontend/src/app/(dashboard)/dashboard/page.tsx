@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { 
   Inbox, 
   ShieldAlert, 
@@ -18,6 +18,9 @@ import { api, Thread } from "@/lib/api";
 
 export default function DashboardPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const activeEmail = searchParams.get("email") || (typeof window !== "undefined" ? localStorage.getItem("active_email") : null);
+  
   const [threads, setThreads] = useState<Thread[]>([]);
   const [stats, setStats] = useState({
     total_emails: 0,
@@ -32,7 +35,7 @@ export default function DashboardPage() {
   useEffect(() => {
     async function loadDashboardData() {
       try {
-        const response = await api.listThreads({ limit: 6 });
+        const response = await api.listThreads({ limit: 6, active_email: activeEmail || undefined });
         setThreads(response.threads);
         setStats(response.stats);
       } catch (err) {
@@ -42,7 +45,7 @@ export default function DashboardPage() {
       }
     }
     loadDashboardData();
-  }, []);
+  }, [activeEmail]);
 
   const getImportanceBadge = (importance: string) => {
     switch (importance) {

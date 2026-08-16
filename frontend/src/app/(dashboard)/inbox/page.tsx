@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { 
   Search, 
   Filter, 
@@ -17,6 +17,8 @@ import { api, Thread } from "@/lib/api";
 
 export default function InboxPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const activeEmail = searchParams.get("email") || (typeof window !== "undefined" ? localStorage.getItem("active_email") : null);
   
   // Data State
   const [threads, setThreads] = useState<Thread[]>([]);
@@ -44,6 +46,7 @@ export default function InboxPage() {
         importance: importance || undefined,
         status: status || undefined,
         sensitive: sensitive,
+        active_email: activeEmail || undefined,
         limit,
         offset
       });
@@ -54,7 +57,7 @@ export default function InboxPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, search, category, importance, status, sensitive]);
+  }, [page, search, category, importance, status, sensitive, activeEmail]);
 
   useEffect(() => {
     loadInbox();

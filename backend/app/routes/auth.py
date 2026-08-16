@@ -11,19 +11,24 @@ from app.auth import get_google_auth_url, exchange_google_code, create_access_to
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 @router.get("/google/login")
-def google_login():
+def google_login(state: Optional[str] = None):
     """
     Redirects the user to the Google OAuth Consent screen.
     """
     try:
-        auth_url = get_google_auth_url()
+        auth_url = get_google_auth_url(state=state)
         return RedirectResponse(url=auth_url)
     except ValueError as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/google/callback")
-async def google_callback(code: str, response: Response, db: Session = Depends(get_db)):
+async def google_callback(
+    code: str,
+    state: Optional[str] = None,
+    response: Response = None,
+    db: Session = Depends(get_db)
+):
     """
     OAuth Callback URL. Exchanges the auth code for tokens, logs the user in,
     saves tokens, initializes settings, and sets a secure JWT cookie.
@@ -40,18 +45,37 @@ async def google_callback(code: str, response: Response, db: Session = Depends(g
         if not email:
             raise HTTPException(status_code=400, detail="Google account has no associated email address.")
             
-        # 1. Find or create user
-        user = db.query(User).filter(User.email == email).first()
+        # 1. Resolve user
+        user = None
+        is_add_account = False
+        
+        # If state is present, this is an existing session linking a secondary account
+        if state:
+            try:
+                from app.auth import decode_access_token
+                payload = decode_access_token(state)
+                if payload and "sub" in payload:
+                    existing_email = payload["sub"]
+                    user = db.query(User).filter(User.email == existing_email).first()
+                    if user:
+                        is_add_account = True
+            except Exception as state_err:
+                print(f"Error resolving OAuth state session: {state_err}")
+                
         if not user:
-            user = User(email=email, is_active=True)
-            db.add(user)
-            db.commit()
-            db.refresh(user)
+            # Standard sign-in / signup flow
+            user = db.query(User).filter(User.email == email).first()
+            if not user:
+                user = User(email=email, is_active=True)
+                db.add(user)
+                db.commit()
+                db.refresh(user)
             
-        # 2. Find or create OAuth Account
+        # 2. Find or create OAuth Account (scoped to both user.id and the specific email)
         oauth_account = db.query(OAuthAccount).filter(
             OAuthAccount.user_id == user.id,
-            OAuthAccount.provider == "google"
+            OAuthAccount.provider == "google",
+            OAuthAccount.email == email
         ).first()
         
         token_expiry = None
@@ -86,8 +110,9 @@ async def google_callback(code: str, response: Response, db: Session = Depends(g
         # 4. Save login audit log
         audit = AuditLog(
             user_id=user.id,
+            gmail_email=email,
             event_type="login",
-            description=f"User logged in via Google OAuth. Gmail account connected: {email}"
+            description=f"User connected Google OAuth account: {email}"
         )
         db.add(audit)
         
@@ -100,265 +125,24 @@ async def google_callback(code: str, response: Response, db: Session = Depends(g
         is_secure = settings.FRONTEND_URL.startswith("https")
         samesite_val = "none" if is_secure else "lax"
         
-        response = RedirectResponse(url=f"{settings.FRONTEND_URL}/dashboard?token={jwt_token}")
-        response.set_cookie(
-            key="session_token",
-            value=jwt_token,
-            httponly=True,
-            max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-            samesite=samesite_val,
-            secure=is_secure
-        )
+        if is_add_account:
+            # Secondary account added, redirect straight back to Settings dashboard
+            response = RedirectResponse(url=f"{settings.FRONTEND_URL}/settings?added=true")
+        else:
+            response = RedirectResponse(url=f"{settings.FRONTEND_URL}/dashboard?token={jwt_token}")
+            response.set_cookie(
+                key="session_token",
+                value=jwt_token,
+                httponly=True,
+                max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+                samesite=samesite_val,
+                secure=is_secure
+            )
         return response
         
     except Exception as e:
         print(f"Error in OAuth callback: {e}")
         return RedirectResponse(url=f"{settings.FRONTEND_URL}/?error=auth_failed")
-
-
-@router.post("/mock-login")
-def mock_login(response: Response, db: Session = Depends(get_db)):
-    """
-    Developer sandbox login. Generates a demo session with pre-populated,
-    realistic email threads showcasing the AI classification and safety states.
-    """
-    demo_email = "demo@replybridge.com"
-    
-    # 1. Create or find User
-    user = db.query(User).filter(User.email == demo_email).first()
-    if not user:
-        user = User(email=demo_email, is_active=True)
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-        
-    # 2. Setup Settings
-    user_settings = db.query(Settings).filter(Settings.user_id == user.id).first()
-    if not user_settings:
-        user_settings = Settings(
-            user_id=user.id,
-            signature="Demo User | ReplyBridge Support",
-            custom_instructions="Politely handle general product inquiries."
-        )
-        db.add(user_settings)
-        
-    # 3. Setup Mock OAuth Account
-    oauth_account = db.query(OAuthAccount).filter(OAuthAccount.user_id == user.id).first()
-    if not oauth_account:
-        oauth_account = OAuthAccount(
-            user_id=user.id,
-            provider="google",
-            email=demo_email,
-            access_token="mock_access_token_123456",
-            refresh_token="mock_refresh_token_123456",
-            token_expiry=datetime.utcnow() + timedelta(days=365),
-            scopes="openid email https://www.googleapis.com/auth/gmail.modify"
-        )
-        db.add(oauth_account)
-    # 4. Clear old emails to avoid duplicates on multiple mock logins
-    mock_ids = ["thread_mock_01", "thread_mock_02", "thread_mock_03", "thread_mock_04"]
-    db.query(EmailMessage).filter(EmailMessage.thread_id.in_(mock_ids)).delete(synchronize_session=False)
-    db.query(EmailThread).filter(EmailThread.thread_id.in_(mock_ids)).delete(synchronize_session=False)
-    db.query(ScheduledReply).filter(ScheduledReply.thread_id.in_(mock_ids)).delete(synchronize_session=False)
-    db.query(AuditLog).filter(AuditLog.thread_id.in_(mock_ids)).delete(synchronize_session=False)
-    db.commit()
-
-    # 5. Populate Sample Thread 1: Urgent Order Status (Auto-reply Candidate)
-    t1 = EmailThread(
-        user_id=user.id,
-        thread_id="thread_mock_01",
-        subject="Urgent Order Status Inquiry",
-        snippet="Hi, I wanted to know the status of my order #10243. We need it by Monday...",
-        last_message_received_at=datetime.utcnow() - timedelta(minutes=20),
-        status="waiting"
-    )
-    db.add(t1)
-    db.commit()
-    
-    m1 = EmailMessage(
-        thread_id="thread_mock_01",
-        message_id="msg_mock_01",
-        sender="Sarah Jenkins <sarah.jenkins@enterprise.com>",
-        recipient=demo_email,
-        subject="Urgent Order Status Inquiry",
-        body_text="Hi, I wanted to know the status of my order #10243. We need it by Monday. Can you confirm if it has shipped? Thanks!",
-        received_at=datetime.utcnow() - timedelta(minutes=20),
-        importance="high",
-        importance_score=92,
-        category="customer",
-        sentiment="neutral",
-        urgency="high",
-        sensitive=False,
-        sensitive_types=["none"],
-        requires_human=False,
-        reason="Direct customer request regarding shipping status. Safe for auto-acknowledgement.",
-        ai_confidence=0.98,
-        reply_decision="reply"
-    )
-    db.add(m1)
-    
-    # Schedule an AI response draft
-    reply_body = (
-        "Hello Sarah,\n\n"
-        "Thank you for reaching out. I have received your message regarding the order status of #10243. "
-        "I am currently reviewing this details and will get back to you with a confirmation shortly.\n\n"
-        "Best regards,\n"
-        "Demo User"
-    )
-    r1 = ScheduledReply(
-        user_id=user.id,
-        thread_id="thread_mock_01",
-        message_id="msg_mock_01",
-        reply_body=reply_body,
-        scheduled_at=datetime.utcnow() + timedelta(minutes=40), # 1 hour total delay, 40m left
-        status="pending"
-    )
-    db.add(r1)
-    
-    # Sample Thread 2: Verification Code OTP (Blocked for Safety)
-    t2 = EmailThread(
-        user_id=user.id,
-        thread_id="thread_mock_02",
-        subject="Your Security Verification Code",
-        snippet="Use security code 492043 to complete your login. This code expires in 10 minutes...",
-        last_message_received_at=datetime.utcnow() - timedelta(minutes=15),
-        status="blocked"
-    )
-    db.add(t2)
-    db.commit()
-    
-    m2 = EmailMessage(
-        thread_id="thread_mock_02",
-        message_id="msg_mock_02",
-        sender="Google Security Team <no-reply@accounts.google.com>",
-        recipient=demo_email,
-        subject="Your Security Verification Code",
-        body_text="Use security code 492043 to complete your login. This code expires in 10 minutes. If you did not request this, please log in immediately to change your password.",
-        received_at=datetime.utcnow() - timedelta(minutes=15),
-        importance="critical",
-        importance_score=99,
-        category="otp",
-        sentiment="neutral",
-        urgency="high",
-        sensitive=True,
-        sensitive_types=["otp"],
-        requires_human=True,
-        reason="Security alert containing authentication OTP codes. Automatically blocked to ensure account safety.",
-        ai_confidence=1.0,
-        reply_decision="no_reply"
-    )
-    db.add(m2)
-    
-    # Sample Thread 3: Business Pitch (Human Review Required)
-    t3 = EmailThread(
-        user_id=user.id,
-        thread_id="thread_mock_03",
-        subject="Partnership Discussion for ReplyBridge",
-        snippet="Hey there, I saw your product launch and would love to discuss a co-marketing campaign...",
-        last_message_received_at=datetime.utcnow() - timedelta(hours=2),
-        status="needs_review"
-    )
-    db.add(t3)
-    db.commit()
-    
-    m3 = EmailMessage(
-        thread_id="thread_mock_03",
-        message_id="msg_mock_03",
-        sender="Alex Rivera <alex@saasgrowth.io>",
-        recipient=demo_email,
-        subject="Partnership Discussion for ReplyBridge",
-        body_text="Hey there, I saw your product launch and would love to discuss a co-marketing campaign. We have over 50k subscribers in the same productivity niche. Let me know if you have 15 minutes next Tuesday.",
-        received_at=datetime.utcnow() - timedelta(hours=2),
-        importance="medium",
-        importance_score=68,
-        category="business",
-        sentiment="positive",
-        urgency="medium",
-        sensitive=False,
-        sensitive_types=["none"],
-        requires_human=True,
-        reason="Business partnership opportunity requires custom negotiations and cannot be handled automatically.",
-        ai_confidence=0.91,
-        reply_decision="review"
-    )
-    db.add(m3)
-    
-    # Draft created for manual view, but status is review
-    reply_body_3 = (
-        "Hi Alex,\n\n"
-        "Thanks for the note! I've received your partnership suggestion and am reviewing it. "
-        "I'll look into our marketing roadmap and get back to you shortly.\n\n"
-        "Best regards,\n"
-        "Demo User"
-    )
-    r3 = ScheduledReply(
-        user_id=user.id,
-        thread_id="thread_mock_03",
-        message_id="msg_mock_03",
-        reply_body=reply_body_3,
-        scheduled_at=datetime.utcnow() + timedelta(hours=1),
-        status="pending" # Visible as pending in review state
-    )
-    db.add(r3)
-    
-    # Sample Thread 4: Low-Importance Newsletter (Ignored)
-    t4 = EmailThread(
-        user_id=user.id,
-        thread_id="thread_mock_04",
-        subject="Weekly Developer digest: Next.js 17 updates",
-        snippet="Welcome to your weekly digest! This week we cover Next.js 17, Tailwind CSS styling, and...",
-        last_message_received_at=datetime.utcnow() - timedelta(hours=5),
-        status="ignored"
-    )
-    db.add(t4)
-    db.commit()
-    
-    m4 = EmailMessage(
-        thread_id="thread_mock_04",
-        message_id="msg_mock_04",
-        sender="Weekly Digest <newsletters@devnews.org>",
-        recipient=demo_email,
-        subject="Weekly Developer digest: Next.js 17 updates",
-        body_text="Welcome to your weekly digest! This week we cover Next.js 17, Tailwind CSS styling, database indexing strategies, and other developer tools. If you no longer wish to receive this email, unsubscribe here.",
-        received_at=datetime.utcnow() - timedelta(hours=5),
-        importance="low",
-        importance_score=8,
-        category="newsletter",
-        sentiment="neutral",
-        urgency="low",
-        sensitive=False,
-        sensitive_types=["none"],
-        requires_human=False,
-        reason="Low-importance automated newsletter digest. Filtered out from replying.",
-        ai_confidence=0.97,
-        reply_decision="no_reply"
-    )
-    db.add(m4)
-    
-    # Audit Logs for Mock
-    db.add(AuditLog(user_id=user.id, event_type="login", description="Demo account initialized."))
-    db.add(AuditLog(user_id=user.id, thread_id="thread_mock_01", message_id="msg_mock_01", event_type="received", description="Received email from Sarah Jenkins <sarah.jenkins@enterprise.com>."))
-    db.add(AuditLog(user_id=user.id, thread_id="thread_mock_01", message_id="msg_mock_01", event_type="analyzed", description="AI Analysis: Importance=high (92/100), Category=customer, Sensitive=False. Reply eligibility=True."))
-    db.add(AuditLog(user_id=user.id, thread_id="thread_mock_01", message_id="msg_mock_01", event_type="scheduled", description="Auto reply scheduled for execution."))
-    db.add(AuditLog(user_id=user.id, thread_id="thread_mock_02", message_id="msg_mock_02", event_type="received", description="Received email from Google Security Team <no-reply@accounts.google.com>."))
-    db.add(AuditLog(user_id=user.id, thread_id="thread_mock_02", message_id="msg_mock_02", event_type="blocked", description="Blocked sensitive OTP email code '492043' from auto-reply."))
-    
-    db.commit()
-
-    # Create session cookie
-    jwt_token = create_access_token(data={"sub": user.email})
-    is_secure = settings.FRONTEND_URL.startswith("https")
-    samesite_val = "none" if is_secure else "lax"
-    
-    response.set_cookie(
-        key="session_token",
-        value=jwt_token,
-        httponly=True,
-        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-        samesite=samesite_val,
-        secure=is_secure
-    )
-    return {"status": "success", "token": jwt_token, "message": "Demo session started successfully"}
 
 
 @router.post("/logout")
@@ -382,11 +166,13 @@ def get_session(current_user: User = Depends(get_current_user), db: Session = De
     """
     Checks the active JWT session and returns basic user info and Gmail link status.
     """
-    oauth_account = db.query(OAuthAccount).filter(OAuthAccount.user_id == current_user.id).first()
+    oauth_accounts = db.query(OAuthAccount).filter(OAuthAccount.user_id == current_user.id).all()
+    connected_emails = [acc.email for acc in oauth_accounts]
     return {
         "authenticated": True,
         "email": current_user.email,
         "user_id": current_user.id,
-        "gmail_connected": oauth_account is not None,
-        "gmail_email": oauth_account.email if oauth_account else None
+        "gmail_connected": len(connected_emails) > 0,
+        "gmail_emails": connected_emails,
+        "gmail_email": connected_emails[0] if connected_emails else None
     }
