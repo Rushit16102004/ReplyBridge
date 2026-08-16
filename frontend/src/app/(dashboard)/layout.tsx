@@ -98,7 +98,9 @@ export default function DashboardLayout({
     } catch (err) {
       console.error("Logout failed", err);
     } finally {
-      router.push("/");
+      if (typeof window !== "undefined") {
+        window.location.href = "/";
+      }
     }
   };
 

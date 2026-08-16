@@ -12,11 +12,11 @@ export default function DemoPage() {
     async function executeDemoAutoLogin() {
       try {
         await api.mockLogin();
-        // Route directly to dashboard once the session cookie is written
-        router.push("/dashboard");
+        // Replace current history entry with dashboard to prevent back-button loops
+        router.replace("/dashboard");
       } catch (err) {
         console.error("Auto demo login failed", err);
-        router.push("/?error=auth_failed");
+        router.replace("/?error=auth_failed");
       }
     }
     executeDemoAutoLogin();
