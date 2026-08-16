@@ -129,14 +129,12 @@ def get_message_details(service, user_id: str, msg_id: str) -> Optional[dict]:
         references_header = extract_header(headers, "references")
         in_reply_to_header = extract_header(headers, "in-reply-to")
         
-        # Parse date
+        # Parse date from top-level internalDate (epoch milliseconds)
         received_at = datetime.utcnow()
-        if date_str:
+        internal_date_str = msg.get("internalDate")
+        if internal_date_str:
             try:
-                # Use email.utils.parsedate_to_datetime to parse RFC 2822 dates properly
-                parsed_date = email.utils.parsedate_to_datetime(date_str)
-                # Convert to naive UTC datetime
-                received_at = parsed_date.astimezone(timezone.utc).replace(tzinfo=None)
+                received_at = datetime.utcfromtimestamp(int(internal_date_str) / 1000.0)
             except Exception:
                 pass
                 

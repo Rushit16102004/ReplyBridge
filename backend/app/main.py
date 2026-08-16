@@ -11,9 +11,9 @@ from app.routes import auth, emails, settings as settings_router, logs
 # 1. Initialize Database Tables on Startup
 Base.metadata.create_all(bind=engine)
 
-# One-time migration to clear cached emails for a clean sync after date parsing fix (v2 for PostgreSQL)
+# One-time migration to clear cached emails for a clean sync after date parsing fix (v3 for PostgreSQL internalDate)
 import os
-if not os.path.exists(".date_fix_applied_v2"):
+if not os.path.exists(".date_fix_applied_v3"):
     from app.database import SessionLocal
     from app.models import EmailMessage, EmailThread, ScheduledReply, AuditLog
     db = SessionLocal()
@@ -24,7 +24,7 @@ if not os.path.exists(".date_fix_applied_v2"):
         db.query(EmailThread).delete()
         db.commit()
         print("Database email cache cleared for fresh sync.")
-        with open(".date_fix_applied_v2", "w") as f:
+        with open(".date_fix_applied_v3", "w") as f:
             f.write("fixed")
     except Exception as e:
         print(f"Error executing one-time date fix: {e}")
