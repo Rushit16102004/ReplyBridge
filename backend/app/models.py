@@ -115,6 +115,8 @@ class EmailMessage(Base):
     sensitive = Column(Boolean, default=False)
     sensitive_types = Column(JSON, default=lambda: [])  # e.g., ["otp", "credentials", "financial"]
     requires_human = Column(Boolean, default=False)
+    is_phishing = Column(Boolean, default=False)
+    phishing_reasons = Column(JSON, default=lambda: [])
     reason = Column(Text, nullable=True)
     ai_confidence = Column(Float, default=1.0)
     

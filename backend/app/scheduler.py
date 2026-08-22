@@ -139,10 +139,12 @@ def sync_user_inbox(user: User, oauth_account: OAuthAccount, db: Session):
                 sensitive=analysis.sensitive,
                 sensitive_types=analysis.sensitive_types,
                 requires_human=analysis.requires_human,
+                is_phishing=analysis.is_phishing,
+                phishing_reasons=analysis.phishing_reasons,
                 reason=analysis.reason,
                 ai_confidence=analysis.confidence,
                 is_read=False,
-                reply_decision="reply" if analysis.should_auto_reply else ("review" if analysis.requires_human or analysis.sensitive else "no_reply")
+                reply_decision="reply" if analysis.should_auto_reply else ("review" if analysis.requires_human or analysis.sensitive or analysis.is_phishing else "no_reply")
             )
             
             db.add(new_msg)
@@ -172,12 +174,25 @@ def sync_user_inbox(user: User, oauth_account: OAuthAccount, db: Session):
             db.commit()
             
             # Update thread status based on analysis
-            if analysis.sensitive:
+            if analysis.is_phishing:
                 db_thread.status = "blocked"
                 audit_block = AuditLog(
                     user_id=user.id,
                     thread_id=thread_id,
                     message_id=msg_id,
+                    gmail_email=oauth_account.email,
+                    event_type="blocked",
+                    description=f"Warning: Phishing threat detected! Reasons: {', '.join(analysis.phishing_reasons)}. Auto-reply permanently blocked."
+                )
+                db.add(audit_block)
+                db.commit()
+            elif analysis.sensitive:
+                db_thread.status = "blocked"
+                audit_block = AuditLog(
+                    user_id=user.id,
+                    thread_id=thread_id,
+                    message_id=msg_id,
+                    gmail_email=oauth_account.email,
                     event_type="blocked",
                     description=f"Sensitive information detected. Category types: {', '.join(analysis.sensitive_types)}. Automatic reply blocked."
                 )
@@ -211,6 +226,7 @@ def sync_user_inbox(user: User, oauth_account: OAuthAccount, db: Session):
             eligible_for_auto_send = (
                 analysis.should_auto_reply and
                 not analysis.sensitive and
+                not analysis.is_phishing and
                 user_settings.auto_reply_enabled and
                 category_allowed and
                 not is_excluded_sender and
@@ -219,9 +235,10 @@ def sync_user_inbox(user: User, oauth_account: OAuthAccount, db: Session):
                 thread_replies_count == 0
             )
             
-            # Generate a draft reply for any non-sensitive email that hasn't been replied to yet
+            # Generate a draft reply for any non-sensitive and non-phishing email that hasn't been replied to yet
             should_generate_draft = (
                 not analysis.sensitive and
+                not analysis.is_phishing and
                 thread_replies_count == 0
             )
             

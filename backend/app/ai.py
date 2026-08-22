@@ -22,6 +22,8 @@ class EmailAnalysisSchema(BaseModel):
     requires_human: bool = Field(description="True if the email contains a complex query or request that absolutely demands manual human attention.")
     should_auto_reply: bool = Field(description="True if a short acknowledgement auto-reply should be sent. False if it is sensitive, spam, marketing, newsletter, or doesn't warrant an acknowledgement.")
     reply_style: str = Field(description="Style of reply: formal, informal")
+    is_phishing: bool = Field(description="True if the email has signs of phishing, spoofing, fraud, or deceptive social engineering.")
+    phishing_reasons: List[str] = Field(description="List of reasons for phishing suspicion, e.g. ['suspicious_sender', 'urgent_threat', 'data_request', 'none']")
     reason: str = Field(description="Brief reason explaining the classification and decision.")
     confidence: float = Field(description="Confidence rating of the model from 0.0 to 1.0")
 
@@ -152,6 +154,21 @@ def run_rule_based_mock_analysis(sender: str, subject: str, body: str) -> EmailA
         reply_style = "informal"
         reason = "Standard message. Auto-reply scheduled."
         
+    # 3. Phishing Check Fallback
+    is_phishing = False
+    phishing_reasons = ["none"]
+    
+    if "suspend" in body_lower or "unauthorized" in body_lower or "verify account" in body_lower:
+        is_phishing = True
+        phishing_reasons = ["urgent_threat"]
+        requires_human = True
+        should_auto_reply = False
+    elif "password" in body_lower and "reset" in body_lower:
+        is_phishing = True
+        phishing_reasons = ["data_request"]
+        requires_human = True
+        should_auto_reply = False
+        
     return EmailAnalysisSchema(
         category=category,
         sensitive=sensitive,
@@ -160,9 +177,11 @@ def run_rule_based_mock_analysis(sender: str, subject: str, body: str) -> EmailA
         importance_score=importance_score,
         urgency=urgency,
         sentiment=sentiment,
-        requires_human=requires_human or sensitive,
-        should_auto_reply=should_auto_reply and not sensitive,
+        requires_human=requires_human or sensitive or is_phishing,
+        should_auto_reply=should_auto_reply and not sensitive and not is_phishing,
         reply_style=reply_style,
+        is_phishing=is_phishing,
+        phishing_reasons=phishing_reasons,
         reason=reason,
         confidence=0.85
     )
@@ -232,7 +251,8 @@ async def analyze_incoming_email(
     3. IMPORTANCE & SCORE: Rate importance (high, medium, low) and assign a score (0 to 100). High importance goes to direct business queries, customers, real opportunities, and actual human needs. Low importance goes to newsletters, automated notifications, or marketing spam.
     4. URGENCY: Set urgency (high, medium, low).
     5. REPLY STYLE: Classify if the email tone and style warrants a 'formal' (business, respectful, structured) or 'informal' (casual, personal, conversational, human-writing) reply.
-    6. AUTO REPLY ELIGIBILITY: Decide should_auto_reply = true if it's safe (sensitive=false), is not newsletter/marketing/financial/security/otp, and is a message that warrants a polite human acknowledgement (e.g. customer asking a question, client checking status).
+    6. PHISHING DETECTION: Identify if the email exhibits signs of phishing, spoofing, credentials request, fake support warning, domain mismatches, or urgent account suspension alerts. Set is_phishing = true if yes, and set phishing_reasons (e.g. ['suspicious_sender', 'urgent_threat', 'data_request']). If not, set is_phishing = false, and phishing_reasons = ['none'].
+    7. AUTO REPLY ELIGIBILITY: Decide should_auto_reply = true if it's safe (sensitive=false and is_phishing=false), is not newsletter/marketing/financial/security/otp, and is a message that warrants a polite human acknowledgement (e.g. customer asking a question, client checking status).
     """
 
     try:

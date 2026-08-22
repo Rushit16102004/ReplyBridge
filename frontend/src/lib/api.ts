@@ -33,6 +33,8 @@ export interface EmailMessage {
   urgency: string;
   sensitive: boolean;
   sensitive_types: string[];
+  is_phishing?: boolean;
+  phishing_reasons?: string[];
   requires_human: boolean;
   reason: string;
   ai_confidence: number;

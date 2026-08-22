@@ -11,9 +11,9 @@ from app.routes import auth, emails, settings as settings_router, logs
 # 1. Initialize Database Tables on Startup
 Base.metadata.create_all(bind=engine)
 
-# One-time migration to clear cached emails and recreate tables for new schema (v4 multi-account)
+# One-time migration to clear cached emails and recreate tables for new schema (v5 phishing alert)
 import os
-if not os.path.exists(".date_fix_applied_v4"):
+if not os.path.exists(".date_fix_applied_v5"):
     from app.database import SessionLocal, engine
     from app.models import EmailMessage, EmailThread, ScheduledReply, AuditLog
     db = SessionLocal()
@@ -26,12 +26,12 @@ if not os.path.exists(".date_fix_applied_v4"):
         
         # Recreate tables immediately with new schema columns
         Base.metadata.create_all(bind=engine)
-        print("Database tables recreated successfully for v4 multi-account schema.")
+        print("Database tables recreated successfully for v5 phishing alert schema.")
         
-        with open(".date_fix_applied_v4", "w") as f:
+        with open(".date_fix_applied_v5", "w") as f:
             f.write("fixed")
     except Exception as e:
-        print(f"Error executing v4 table recreation migration: {e}")
+        print(f"Error executing v5 table recreation migration: {e}")
     finally:
         db.close()
 

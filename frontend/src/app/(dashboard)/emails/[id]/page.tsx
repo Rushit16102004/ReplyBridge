@@ -221,6 +221,27 @@ export default function EmailDetailPage({ params }: { params: Promise<{ id: stri
         
         {/* Email Stream Column */}
         <div className="lg:col-span-8 space-y-6">
+          {/* Phishing Threat Warning Banner */}
+          {latestMessage?.is_phishing && (
+            <div className="bg-red-50 dark:bg-red-955/20 border-2 border-red-500 dark:border-red-900/50 rounded-2xl p-5 shadow-md flex items-start space-x-3.5 animate-pulse">
+              <ShieldAlert className="h-6 w-6 text-red-505 shrink-0 mt-0.5" />
+              <div className="space-y-1.5">
+                <h4 className="text-sm font-black text-red-700 dark:text-red-400">🚨 Warning: The AI thinks this email is a Phishing Attempt!</h4>
+                <p className="text-xs text-red-650 dark:text-red-450 leading-relaxed">
+                  This message shows clear signs of spoofing, financial fraud, or social engineering. Do NOT click any links, open attachments, or input passwords.
+                </p>
+                {latestMessage.phishing_reasons && latestMessage.phishing_reasons.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {latestMessage.phishing_reasons.map((reason) => (
+                      <span key={reason} className="bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-400 px-2 py-0.5 rounded-md text-[10px] font-bold border border-red-200 dark:border-red-900/50 uppercase tracking-wider">
+                        {reason.replace('_', ' ')}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
           {/* Email Conversation Chain */}
           <div className="space-y-4">
             {thread.messages.map((msg, index) => {
@@ -350,7 +371,19 @@ export default function EmailDetailPage({ params }: { params: Promise<{ id: stri
                 </div>
               )}
 
-              {latestMessage.sensitive ? (
+              {latestMessage.is_phishing ? (
+                <div className="bg-red-50 dark:bg-red-950/10 border border-red-200 dark:border-red-900/40 rounded-xl p-5 text-center space-y-4">
+                  <div className="mx-auto h-12 w-12 rounded-2xl bg-red-100 dark:bg-red-955 text-red-500 flex items-center justify-center shadow-inner">
+                    <ShieldAlert className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-red-700 dark:text-red-400">🚨 Phishing Attack Blocked</h4>
+                    <p className="text-xs text-red-650 dark:text-red-450 mt-1.5 max-w-md mx-auto leading-relaxed">
+                      Auto-reply is permanently disabled for this email. The AI identified this message as a security threat. For your safety, do not engage with this sender.
+                    </p>
+                  </div>
+                </div>
+              ) : latestMessage.sensitive ? (
                 <div className="bg-rose-50 dark:bg-rose-950/10 border border-rose-200 dark:border-rose-900/40 rounded-xl p-5 text-center space-y-4">
                   <div className="mx-auto h-12 w-12 rounded-2xl bg-rose-100 dark:bg-rose-950 text-rose-500 flex items-center justify-center shadow-inner">
                     <Lock className="h-6 w-6" />

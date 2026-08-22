@@ -175,6 +175,8 @@ def get_thread(thread_id: str, current_user: User = Depends(get_current_user), d
             "urgency": m.urgency,
             "sensitive": m.sensitive,
             "sensitive_types": m.sensitive_types,
+            "is_phishing": m.is_phishing,
+            "phishing_reasons": m.phishing_reasons,
             "requires_human": m.requires_human,
             "reason": m.reason,
             "ai_confidence": m.ai_confidence
