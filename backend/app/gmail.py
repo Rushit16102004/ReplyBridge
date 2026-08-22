@@ -144,7 +144,13 @@ def get_message_details(service, user_id: str, msg_id: str) -> Optional[dict]:
         if not body_text and body_html:
             # simple text extractor for display
             import re
-            body_text = re.sub('<[^<]+?>', '', body_html)
+            # Remove style and script blocks completely to avoid rendering raw CSS/JS definitions
+            cleaned_html = re.sub(r'<style\b[^>]*>([\s\S]*?)</style>', '', body_html, flags=re.IGNORECASE)
+            cleaned_html = re.sub(r'<script\b[^>]*>([\s\S]*?)</script>', '', cleaned_html, flags=re.IGNORECASE)
+            # Strip remaining HTML tags
+            body_text = re.sub(r'<[^>]+>', '', cleaned_html)
+            # Normalize multiple consecutive empty lines
+            body_text = re.sub(r'\n\s*\n', '\n\n', body_text).strip()
             
         return {
             "message_id": msg_id,
