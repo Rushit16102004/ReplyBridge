@@ -80,12 +80,10 @@ export default function InboxPage() {
 
   const getImportanceBadge = (importance: string) => {
     switch (importance) {
-      case "critical":
-        return "bg-red-50 text-red-700 border-red-200 dark:bg-red-950/20 dark:text-red-400 dark:border-red-900/40";
       case "high":
-        return "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/20 dark:text-amber-455 dark:border-amber-900/40";
+        return "bg-red-50 text-red-700 border-red-200 dark:bg-red-950/20 dark:text-red-400 dark:border-red-900/40";
       case "medium":
-        return "bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-800/40 dark:text-slate-400 dark:border-slate-800";
+        return "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/20 dark:text-amber-455 dark:border-amber-900/40";
       case "low":
         return "bg-slate-50 text-slate-550 border-slate-100 dark:bg-slate-900/10 dark:text-slate-500 dark:border-slate-900/20";
       default:
@@ -183,7 +181,6 @@ export default function InboxPage() {
             className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 px-3 py-2 rounded-lg outline-none focus:border-emerald-500 text-xs font-bold text-slate-600 dark:text-slate-350 cursor-pointer"
           >
             <option value="">Importance: All</option>
-            <option value="critical">Critical</option>
             <option value="high">High</option>
             <option value="medium">Medium</option>
             <option value="low">Low</option>
@@ -196,11 +193,9 @@ export default function InboxPage() {
             className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 px-3 py-2 rounded-lg outline-none focus:border-emerald-500 text-xs font-bold text-slate-600 dark:text-slate-350 cursor-pointer"
           >
             <option value="">Decision Status: All</option>
-            <option value="waiting">Waiting (Scheduled)</option>
-            <option value="replied">Replied</option>
-            <option value="blocked">Blocked (Sensitive)</option>
             <option value="needs_review">Needs Review</option>
-            <option value="ignored">No Auto Reply</option>
+            <option value="replied">Replied</option>
+            <option value="waiting">Waiting (Scheduled)</option>
           </select>
 
           {/* Sensitive Filter */}

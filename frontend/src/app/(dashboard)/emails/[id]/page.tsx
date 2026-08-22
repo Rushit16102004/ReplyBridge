@@ -121,12 +121,10 @@ export default function EmailDetailPage({ params }: { params: Promise<{ id: stri
 
   const getImportanceBadge = (importance: string) => {
     switch (importance) {
-      case "critical":
-        return "bg-red-50 text-red-750 border-red-200 dark:bg-red-955/20 dark:text-red-400 dark:border-red-900/40";
       case "high":
-        return "bg-amber-50 text-amber-705 border-amber-200 dark:bg-amber-955/20 dark:text-amber-455 dark:border-amber-900/40";
+        return "bg-red-50 text-red-750 border-red-200 dark:bg-red-955/20 dark:text-red-400 dark:border-red-900/40";
       case "medium":
-        return "bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-800/40 dark:text-slate-400 dark:border-slate-800";
+        return "bg-amber-50 text-amber-755 border-amber-200 dark:bg-amber-955/20 dark:text-amber-455 dark:border-amber-900/40";
       case "low":
         return "bg-slate-50 text-slate-550 border-slate-100 dark:bg-slate-900/10 dark:text-slate-500 dark:border-slate-900/20";
       default:
@@ -283,10 +281,17 @@ export default function EmailDetailPage({ params }: { params: Promise<{ id: stri
                 </div>
                 
                 {thread.scheduled_reply && thread.scheduled_reply.status === "pending" && (
-                  <div className="bg-indigo-50 border border-indigo-200 dark:bg-indigo-950/20 dark:border-indigo-900/50 text-indigo-650 dark:text-indigo-400 px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center space-x-1.5">
-                    <Calendar className="h-3.5 w-3.5 shrink-0" />
-                    <span>Auto-sends: {new Date(thread.scheduled_reply.scheduled_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} ({new Date(thread.scheduled_reply.scheduled_at).toLocaleDateString()})</span>
-                  </div>
+                  thread.status === "needs_review" ? (
+                    <div className="bg-amber-50 border border-amber-200 dark:bg-amber-950/20 dark:border-amber-900/50 text-amber-700 dark:text-amber-400 px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center space-x-1.5">
+                      <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-500" />
+                      <span>Draft: Needs Review (Will not auto-send)</span>
+                    </div>
+                  ) : (
+                    <div className="bg-indigo-50 border border-indigo-200 dark:bg-indigo-950/20 dark:border-indigo-900/50 text-indigo-650 dark:text-indigo-400 px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center space-x-1.5">
+                      <Calendar className="h-3.5 w-3.5 shrink-0" />
+                      <span>Auto-sends: {new Date(thread.scheduled_reply.scheduled_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} ({new Date(thread.scheduled_reply.scheduled_at).toLocaleDateString()})</span>
+                    </div>
+                  )
                 )}
               </div>
 
@@ -336,7 +341,7 @@ export default function EmailDetailPage({ params }: { params: Promise<{ id: stri
                       className="bg-emerald-500 hover:bg-emerald-600 text-white px-5 py-3 rounded-xl text-sm font-bold shadow-md shadow-emerald-500/10 transition-all flex items-center space-x-2 active:scale-95 disabled:opacity-50"
                     >
                       <Send className="h-4.5 w-4.5" />
-                      <span>{actionLoading ? "Processing..." : "Send Acknowledgement"}</span>
+                      <span>{actionLoading ? "Processing..." : (thread.status === "needs_review" ? "Approve and Send" : "Send Acknowledgement")}</span>
                     </button>
                     
                     <button
@@ -355,7 +360,7 @@ export default function EmailDetailPage({ params }: { params: Promise<{ id: stri
                         className="border border-red-200 dark:border-red-950/40 text-red-650 hover:bg-red-50/50 dark:hover:bg-red-950/10 px-4.5 py-3 rounded-xl text-sm font-semibold transition-all flex items-center space-x-2 ml-auto"
                       >
                         <XOctagon className="h-4.5 w-4.5 text-red-500" />
-                        <span>Cancel Auto-Send</span>
+                        <span>{thread.status === "needs_review" ? "Discard Draft" : "Cancel Auto-Send"}</span>
                       </button>
                     )}
                   </div>
@@ -390,9 +395,8 @@ export default function EmailDetailPage({ params }: { params: Promise<{ id: stri
                 <div className="flex-1 h-2.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
                   <div 
                     className={`h-full rounded-full transition-all duration-500
-                      ${latestMessage.importance === "critical" ? "bg-red-500" : ""}
-                      ${latestMessage.importance === "high" ? "bg-amber-500" : ""}
-                      ${latestMessage.importance === "medium" ? "bg-indigo-500" : ""}
+                      ${latestMessage.importance === "high" ? "bg-red-500" : ""}
+                      ${latestMessage.importance === "medium" ? "bg-amber-500" : ""}
                       ${latestMessage.importance === "low" ? "bg-slate-400" : ""}
                     `}
                     style={{ width: `${latestMessage.importance_score}%` }}

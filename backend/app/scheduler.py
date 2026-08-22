@@ -196,13 +196,6 @@ def sync_user_inbox(user: User, oauth_account: OAuthAccount, db: Session):
                 db.commit()
                 db.refresh(user_settings)
                 
-            # Checks for reply scheduling:
-            # 1. AI decided to auto reply
-            # 2. User has auto reply enabled overall
-            # 3. Message category is allowed in user settings
-            # 4. Message is NOT marked sensitive
-            # 5. Sender or Sender's Domain is NOT excluded
-            # 6. We haven't sent a reply to this thread already (avoid loops)
             is_excluded_sender = any(ex.lower() in details["sender"].lower() for ex in user_settings.excluded_senders)
             is_excluded_domain = any(dom.lower() in details["sender"].lower() for dom in user_settings.excluded_domains)
             
@@ -214,17 +207,25 @@ def sync_user_inbox(user: User, oauth_account: OAuthAccount, db: Session):
                 ScheduledReply.status.in_(["sent", "pending"])
             ).count()
             
-            eligible = (
+            # Determine if we should auto-send or hold for human review
+            eligible_for_auto_send = (
                 analysis.should_auto_reply and
                 not analysis.sensitive and
                 user_settings.auto_reply_enabled and
                 category_allowed and
                 not is_excluded_sender and
                 not is_excluded_domain and
+                not analysis.requires_human and
                 thread_replies_count == 0
             )
             
-            if eligible:
+            # Generate a draft reply for any non-sensitive email that hasn't been replied to yet
+            should_generate_draft = (
+                not analysis.sensitive and
+                thread_replies_count == 0
+            )
+            
+            if should_generate_draft:
                 # Calculate scheduled time based on delay
                 delay = user_settings.delay_minutes
                 scheduled_time = datetime.utcnow() + timedelta(minutes=delay)
@@ -245,16 +246,13 @@ def sync_user_inbox(user: User, oauth_account: OAuthAccount, db: Session):
                     sender=details["sender"],
                     subject=details["subject"],
                     email_body=details["body_text"],
+                    reply_style=analysis.reply_style,
                     tone=user_settings.ai_tone,
                     max_length=user_settings.max_reply_length,
                     signature=user_settings.signature,
                     custom_instructions=custom_instructions,
                     thread_history=thread_history_str
                 ))
-                
-                # Manual and Approval modes: change scheduler state
-                # Auto Mode: auto sends after delay. Approval Mode: waits for user approval. Manual Mode: saves draft only.
-                # Default status is 'pending' for Auto Mode. We will use status='pending' but check settings when executing.
                 
                 new_reply = ScheduledReply(
                     user_id=user.id,
@@ -267,7 +265,14 @@ def sync_user_inbox(user: User, oauth_account: OAuthAccount, db: Session):
                 )
                 
                 db.add(new_reply)
-                db_thread.status = "waiting" # Waiting for reply window to elapse
+                
+                if eligible_for_auto_send:
+                    db_thread.status = "waiting" # Waiting to be auto-sent
+                    description_log = f"Auto reply scheduled for {scheduled_time.strftime('%Y-%m-%d %H:%M:%S')} UTC. Delay={delay}m."
+                else:
+                    db_thread.status = "needs_review" # Needs human approval
+                    description_log = "Draft reply generated. Placed in 'Needs Review' status."
+                    
                 db.commit()
                 
                 audit_sched = AuditLog(
@@ -276,13 +281,13 @@ def sync_user_inbox(user: User, oauth_account: OAuthAccount, db: Session):
                     message_id=msg_id,
                     gmail_email=oauth_account.email,
                     event_type="scheduled",
-                    description=f"Auto reply scheduled for {scheduled_time.strftime('%Y-%m-%d %H:%M:%S')} UTC. Delay={delay}m. Working hours={within_hours}."
+                    description=description_log
                 )
                 db.add(audit_sched)
                 db.commit()
-                print(f"Scheduled reply for {msg_id} at {scheduled_time}")
+                print(f"Scheduled/Draft reply for {msg_id} at {scheduled_time} (status={db_thread.status})")
             else:
-                # Not replying, update thread status
+                # Not replying/drafting (e.g. sensitive), update thread status
                 if db_thread.status == "unread" or db_thread.status == "waiting":
                     db_thread.status = "ignored"
                     db.commit()
@@ -317,6 +322,14 @@ def process_scheduled_replies(db: Session):
             
         user_settings = user.settings
         
+        # Guard: Check if the thread is in "needs_review" status (needs manual human click)
+        db_thread = db.query(EmailThread).filter(
+            EmailThread.thread_id == reply.thread_id,
+            EmailThread.user_id == user.id
+        ).first()
+        if db_thread and db_thread.status == "needs_review":
+            continue
+
         # Guard: Check if the user has disabled auto replies since scheduling
         if not user_settings or not user_settings.auto_reply_enabled:
             reply.status = "cancelled"

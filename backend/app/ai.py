@@ -15,12 +15,13 @@ class EmailAnalysisSchema(BaseModel):
     category: str = Field(description="One of: customer, company/HR, job_opportunity, business, sales, support, personal, newsletter, marketing, notification, financial, security, otp, other")
     sensitive: bool = Field(description="True if the email contains passwords, OTPs, login verification, bank transactions, tax details, UPI requests, credit card data, legal documents, API keys, credentials, or highly confidential data.")
     sensitive_types: List[str] = Field(description="List of reasons why it is sensitive, e.g. ['otp', 'credentials', 'bank_info', 'legal', 'none']")
-    importance: str = Field(description="Importance category: critical, high, medium, low")
+    importance: str = Field(description="Importance category: high, medium, low")
     importance_score: int = Field(description="Numerical importance score from 0 to 100 based on sender, context, urgency, deadlines, and relationship")
     urgency: str = Field(description="Urgency level: high, medium, low")
     sentiment: str = Field(description="Sentiment: positive, neutral, negative")
     requires_human: bool = Field(description="True if the email contains a complex query or request that absolutely demands manual human attention.")
     should_auto_reply: bool = Field(description="True if a short acknowledgement auto-reply should be sent. False if it is sensitive, spam, marketing, newsletter, or doesn't warrant an acknowledgement.")
+    reply_style: str = Field(description="Style of reply: formal, informal")
     reason: str = Field(description="Brief reason explaining the classification and decision.")
     confidence: float = Field(description="Confidence rating of the model from 0.0 to 1.0")
 
@@ -83,6 +84,7 @@ def run_rule_based_mock_analysis(sender: str, subject: str, body: str) -> EmailA
     sentiment = "neutral"
     requires_human = False
     should_auto_reply = True
+    reply_style = "informal"
     reason = "Regular email classified via rules."
     
     if "newsletter" in body_lower or "unsubscribe" in body_lower or "mailing list" in body_lower:
@@ -91,6 +93,7 @@ def run_rule_based_mock_analysis(sender: str, subject: str, body: str) -> EmailA
         importance_score = 15
         urgency = "low"
         should_auto_reply = False
+        reply_style = "formal"
         reason = "Newsletter detected. Auto-replies are disabled for newsletters."
     elif "marketing" in body_lower or "promo" in body_lower or "sale is on" in body_lower:
         category = "marketing"
@@ -98,6 +101,7 @@ def run_rule_based_mock_analysis(sender: str, subject: str, body: str) -> EmailA
         importance_score = 10
         urgency = "low"
         should_auto_reply = False
+        reply_style = "formal"
         reason = "Marketing email. Auto-replies are disabled."
     elif "security alert" in subject_lower or "sign-in" in body_lower:
         category = "security"
@@ -106,6 +110,7 @@ def run_rule_based_mock_analysis(sender: str, subject: str, body: str) -> EmailA
         urgency = "high"
         should_auto_reply = False
         sensitive = True
+        reply_style = "formal"
         sensitive_types.append("security")
         reason = "Security alert detected. Automatically blocked for safety."
     elif sensitive:
@@ -114,6 +119,7 @@ def run_rule_based_mock_analysis(sender: str, subject: str, body: str) -> EmailA
         importance_score = 90
         urgency = "high"
         should_auto_reply = False
+        reply_style = "formal"
         reason = f"Blocked sensitive information ({', '.join(sensitive_types)})."
     elif "invoice" in subject_lower or "payment" in subject_lower:
         category = "financial"
@@ -121,6 +127,7 @@ def run_rule_based_mock_analysis(sender: str, subject: str, body: str) -> EmailA
         importance_score = 80
         urgency = "high"
         should_auto_reply = False
+        reply_style = "formal"
         reason = "Financial email. Auto-reply disabled to prevent transaction issues."
     elif "urgent" in subject_lower or "asap" in body_lower or "deadline" in body_lower:
         category = "customer"
@@ -128,18 +135,21 @@ def run_rule_based_mock_analysis(sender: str, subject: str, body: str) -> EmailA
         importance_score = 90
         urgency = "high"
         sentiment = "neutral"
+        reply_style = "informal"
         reason = "Urgent customer enquiry. Auto-reply scheduled."
     elif "job" in subject_lower or "resume" in body_lower or "interview" in body_lower:
         category = "job_opportunity"
         importance = "high"
         importance_score = 75
         urgency = "medium"
+        reply_style = "formal"
         reason = "Job opportunity email. Auto-reply scheduled."
     else:
         category = "customer"
         importance = "medium"
         importance_score = 60
         urgency = "medium"
+        reply_style = "informal"
         reason = "Standard message. Auto-reply scheduled."
         
     return EmailAnalysisSchema(
@@ -152,6 +162,7 @@ def run_rule_based_mock_analysis(sender: str, subject: str, body: str) -> EmailA
         sentiment=sentiment,
         requires_human=requires_human or sensitive,
         should_auto_reply=should_auto_reply and not sensitive,
+        reply_style=reply_style,
         reason=reason,
         confidence=0.85
     )
@@ -218,9 +229,10 @@ async def analyze_incoming_email(
     Perform the following analysis:
     1. CATEGORY: Classify the email into one of these: customer, company/HR, job_opportunity, business, sales, support, personal, newsletter, marketing, notification, financial, security, otp, other.
     2. SENSITIVE: Scan if the email contains highly sensitive tokens, transactional requests, financial details, passwords, OTP code, security authorization, API keys, or legal disputes. Return true if yes.
-    3. IMPORTANCE & SCORE: Rate importance (critical, high, medium, low) and assign a score (0 to 100). High importance goes to direct business queries, customers, real opportunities, and actual human needs. Low importance goes to newsletters, automated notifications, or marketing spam.
+    3. IMPORTANCE & SCORE: Rate importance (high, medium, low) and assign a score (0 to 100). High importance goes to direct business queries, customers, real opportunities, and actual human needs. Low importance goes to newsletters, automated notifications, or marketing spam.
     4. URGENCY: Set urgency (high, medium, low).
-    5. AUTO REPLY ELIGIBILITY: Decide should_auto_reply = true if it's safe (sensitive=false), is not newsletter/marketing/financial/security/otp, and is a message that warrants a polite human acknowledgement (e.g. customer asking a question, client checking status).
+    5. REPLY STYLE: Classify if the email tone and style warrants a 'formal' (business, respectful, structured) or 'informal' (casual, personal, conversational, human-writing) reply.
+    6. AUTO REPLY ELIGIBILITY: Decide should_auto_reply = true if it's safe (sensitive=false), is not newsletter/marketing/financial/security/otp, and is a message that warrants a polite human acknowledgement (e.g. customer asking a question, client checking status).
     """
 
     try:
@@ -244,6 +256,7 @@ async def generate_acknowledgement_reply(
     sender: str,
     subject: str,
     email_body: str,
+    reply_style: str = "formal",
     tone: str = "professional",
     max_length: int = 150,
     signature: str = "",
@@ -265,6 +278,13 @@ async def generate_acknowledgement_reply(
         "concise": "extremely direct, brief, and to-the-point"
     }.get(tone, "professional and natural")
 
+    # Combine dynamic style (formal vs. informal/human-writing) with user settings tone
+    style_guidance = (
+        "Write in a highly natural, warm, conversational, casual, and informal human-writing style. Avoid business jargon, and write like a real person typing a quick personal message."
+        if reply_style == "informal" else
+        "Write in a polite, respectful, professional, and formal business style."
+    )
+
     prompt = f"""
     You are writing a short email acknowledgement reply on behalf of a human user.
     The goal is to write a response that sounds exactly like a REAL human wrote it. It must be highly realistic, conversational, and natural. Do NOT use templates, do not say "This is an automated response", and do not use robotic phrases.
@@ -276,7 +296,7 @@ async def generate_acknowledgement_reply(
     Previous Thread History (if any): {thread_history}
     
     Rules for the Response:
-    1. Tone: The tone must be {tone_instruction}.
+    1. Tone & Style: {style_guidance} The overall tone should also align with being {tone_instruction}.
     2. Purpose: Acknowledge receipt of the email and state that you have received it and will look into it/get back soon. Do NOT answer the question fully. Do NOT make promises or schedule specific times unless required.
     3. Realism: Write naturally. Avoid stiff greetings. Keep it looking like a real human typed it.
     4. Constraints: Maximum length is {max_length} words.

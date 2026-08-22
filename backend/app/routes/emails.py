@@ -103,7 +103,7 @@ def list_threads(
     total_emails = db.query(EmailMessage).join(EmailMessage.thread).filter(EmailThread.user_id == current_user.id).count()
     important_emails = db.query(EmailMessage).join(EmailMessage.thread).filter(
         EmailThread.user_id == current_user.id,
-        EmailMessage.importance.in_(["critical", "high"])
+        EmailMessage.importance == "high"
     ).count()
     sent_replies = db.query(ScheduledReply).filter(
         ScheduledReply.user_id == current_user.id,
