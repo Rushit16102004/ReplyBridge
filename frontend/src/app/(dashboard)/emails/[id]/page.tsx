@@ -263,8 +263,51 @@ export default function EmailDetailPage({ params }: { params: Promise<{ id: stri
                   </div>
                   
                   {/* Email Body */}
-                  <div className="mt-4 text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap font-sans break-words border-t border-slate-100 dark:border-slate-800/60 pt-4">
-                    {msg.body_text}
+                  <div className="mt-4 text-sm text-slate-700 dark:text-slate-300 leading-relaxed border-t border-slate-100 dark:border-slate-800/60 pt-4">
+                    {msg.body_html ? (
+                      <div className="w-full overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800 bg-white">
+                        <iframe
+                          srcDoc={`
+                            <!DOCTYPE html>
+                            <html>
+                            <head>
+                              <base target="_blank">
+                              <style>
+                                body {
+                                  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                                  margin: 16px;
+                                  color: #1e293b;
+                                  background-color: #ffffff;
+                                  font-size: 14px;
+                                  line-height: 1.5;
+                                }
+                                a { color: #10b981; text-decoration: underline; }
+                              </style>
+                            </head>
+                            <body>
+                              ${msg.body_html}
+                            </body>
+                            </html>
+                          `}
+                          title={`Email message ${msg.message_id}`}
+                          sandbox="allow-popups allow-same-origin"
+                          className="w-full border-0 min-h-[300px]"
+                          onLoad={(e) => {
+                            const iframe = e.currentTarget;
+                            setTimeout(() => {
+                              if (iframe.contentWindow?.document.documentElement) {
+                                iframe.style.height = 'auto';
+                                iframe.style.height = (iframe.contentWindow.document.documentElement.scrollHeight + 20) + 'px';
+                              }
+                            }, 150);
+                          }}
+                        />
+                      </div>
+                    ) : (
+                      <div className="whitespace-pre-wrap font-sans break-words text-slate-700 dark:text-slate-300">
+                        {msg.body_text}
+                      </div>
+                    )}
                   </div>
                 </div>
               );
