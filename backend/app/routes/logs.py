@@ -34,7 +34,7 @@ def list_logs(
             "message_id": l.message_id,
             "event_type": l.event_type,
             "description": l.description,
-            "created_at": l.created_at
+            "created_at": l.created_at.isoformat() + "Z" if l.created_at else None
         })
         
     return {

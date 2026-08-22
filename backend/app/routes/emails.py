@@ -89,7 +89,7 @@ def list_threads(
             "subject": t.subject or "(No Subject)",
             "snippet": t.snippet or "",
             "sender": latest_msg.sender if latest_msg else "",
-            "last_message_received_at": t.last_message_received_at,
+            "last_message_received_at": t.last_message_received_at.isoformat() + "Z" if t.last_message_received_at else None,
             "status": t.status,
             "message_count": msg_count,
             "category": latest_msg.category if latest_msg else "other",
@@ -167,7 +167,7 @@ def get_thread(thread_id: str, current_user: User = Depends(get_current_user), d
             "subject": m.subject,
             "body_text": m.body_text,
             "body_html": m.body_html,
-            "received_at": m.received_at,
+            "received_at": m.received_at.isoformat() + "Z" if m.received_at else None,
             "importance": m.importance,
             "importance_score": m.importance_score,
             "category": m.category,
@@ -185,9 +185,9 @@ def get_thread(thread_id: str, current_user: User = Depends(get_current_user), d
         scheduled_payload = {
             "id": scheduled_reply.id,
             "reply_body": scheduled_reply.reply_body,
-            "scheduled_at": scheduled_reply.scheduled_at,
-            "sent_at": scheduled_reply.sent_at,
-            "cancelled_at": scheduled_reply.cancelled_at,
+            "scheduled_at": scheduled_reply.scheduled_at.isoformat() + "Z" if scheduled_reply.scheduled_at else None,
+            "sent_at": scheduled_reply.sent_at.isoformat() + "Z" if scheduled_reply.sent_at else None,
+            "cancelled_at": scheduled_reply.cancelled_at.isoformat() + "Z" if scheduled_reply.cancelled_at else None,
             "status": scheduled_reply.status,
             "error_message": scheduled_reply.error_message
         }
@@ -387,7 +387,7 @@ async def regenerate_reply_draft(
     
     return {
         "reply_body": new_reply,
-        "scheduled_at": db_scheduled.scheduled_at,
+        "scheduled_at": db_scheduled.scheduled_at.isoformat() + "Z" if db_scheduled.scheduled_at else None,
         "status": db_scheduled.status
     }
 
