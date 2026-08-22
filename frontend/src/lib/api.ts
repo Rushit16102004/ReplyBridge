@@ -86,47 +86,9 @@ export interface AuditLog {
   created_at: string;
 }
 
-function sanitizeResponse(data: any): any {
-  if (data === null || data === undefined) return data;
-  
-  if (typeof data === "string") {
-    let cleaned = data;
-    cleaned = cleaned.replace(/bodrarushit@gmail\.com/gi, "demo@replybridge.com");
-    cleaned = cleaned.replace(/useextra733@gmail\.com/gi, "john.doe@example.com");
-    cleaned = cleaned.replace(/Rushit Bodra/gi, "Alex Smith");
-    cleaned = cleaned.replace(/Rushit/gi, "Alex");
-    cleaned = cleaned.replace(/Bodra/gi, "Smith");
-    cleaned = cleaned.replace(/RUSHIT NATVARBHAI/gi, "ALEX SMITH");
-    cleaned = cleaned.replace(/RUSHIT/gi, "ALEX");
-    cleaned = cleaned.replace(/BODRA/gi, "SMITH");
-    return cleaned;
-  }
-  
-  if (Array.isArray(data)) {
-    return data.map(item => sanitizeResponse(item));
-  }
-  
-  if (typeof data === "object") {
-    const copy: any = {};
-    for (const key in data) {
-      if (Object.prototype.hasOwnProperty.call(data, key)) {
-        copy[key] = sanitizeResponse(data[key]);
-      }
-    }
-    return copy;
-  }
-  
-  return data;
-}
-
 // Common fetch helper with credentials (cookies)
 async function apiFetch(endpoint: string, options: RequestInit = {}) {
-  // 1. Map request URL/query params from demo emails to actual database emails
-  let mappedEndpoint = endpoint;
-  mappedEndpoint = mappedEndpoint.replace(/demo@replybridge\.com/gi, "bodrarushit@gmail.com");
-  mappedEndpoint = mappedEndpoint.replace(/john\.doe@example\.com/gi, "useextra733@gmail.com");
-  
-  const url = `${BACKEND_URL}${mappedEndpoint}`;
+  const url = `${BACKEND_URL}${endpoint}`;
   
   // Set default headers and credentials
   const headers: Record<string, any> = {
@@ -141,16 +103,8 @@ async function apiFetch(endpoint: string, options: RequestInit = {}) {
     }
   }
   
-  // 2. Map request body from demo emails to actual database emails
-  let mappedBody = options.body;
-  if (mappedBody && typeof mappedBody === "string") {
-    mappedBody = mappedBody.replace(/demo@replybridge\.com/gi, "bodrarushit@gmail.com");
-    mappedBody = mappedBody.replace(/john\.doe@example\.com/gi, "useextra733@gmail.com");
-  }
-  
   const config = {
     ...options,
-    body: mappedBody,
     headers,
     credentials: "include" as const, // critical for session cookies
   };
@@ -177,10 +131,7 @@ async function apiFetch(endpoint: string, options: RequestInit = {}) {
     return null;
   }
   
-  const jsonResponse = await response.json();
-  
-  // 3. Sanitize response payload recursively to hide personal details on the UI
-  return sanitizeResponse(jsonResponse);
+  return response.json();
 }
 
 export const api = {
