@@ -49,8 +49,26 @@ def sync_user_inbox(user: User, oauth_account: OAuthAccount, db: Session):
         return
 
     try:
-            user_email = oauth_account.email
+        user_email = oauth_account.email
+        
+        # 1. Fetch recent messages in inbox (limit to last 15 to stay light)
+        results = service.users().messages().list(userId="me", maxResults=15, q="is:inbox").execute()
+        messages = results.get("messages", [])
+        
+        for msg in messages:
+            msg_id = msg["id"]
+            thread_id = msg["threadId"]
             
+            # Check if this message already exists in database
+            db_message = db.query(EmailMessage).filter(EmailMessage.message_id == msg_id).first()
+            if db_message:
+                continue # Already processed
+                
+            # Fetch full details of the message
+            details = get_message_details(service, "me", msg_id)
+            if not details:
+                continue
+                
             # Safety: Ensure the sender is NOT the user themselves
             sender_email = details["sender"]
             if user_email.lower() in sender_email.lower():
@@ -86,9 +104,14 @@ def sync_user_inbox(user: User, oauth_account: OAuthAccount, db: Session):
             thread_history_str = ""
             thread_messages = db.query(EmailMessage).filter(EmailMessage.thread_id == thread_id).order_by(EmailMessage.received_at.asc()).all()
             if thread_messages:
-                thread_history_str = "\n".join([f"From {m.sender}: {m.body_text[:200]}" for m in thread_messages])
+                thread_history_str = "\n".join([f"From {m.sender}: {m.body_text[:205]}" for m in thread_messages])
                 
             print(f"Running AI analysis for message: {details['subject']} from {details['sender']}")
+            
+            # Introduce a 4.5s delay to remain safely below the Gemini free-tier 15 RPM limit
+            import time
+            time.sleep(4.5)
+            
             analysis = asyncio.run(analyze_incoming_email(
                 sender=details["sender"],
                 recipient=details["recipient"],
