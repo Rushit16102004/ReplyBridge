@@ -8,38 +8,14 @@ from app.database import engine, Base
 from app.scheduler import start_background_workers, stop_background_workers
 from app.routes import auth, emails, settings as settings_router, logs
 
-# 1. Initialize Database Tables on Startup
+# 1. Initialize Database Tables in Memory on Startup
 Base.metadata.create_all(bind=engine)
-
-# One-time migration to clear cached emails and recreate tables for new schema (v5 phishing alert)
-import os
-if not os.path.exists(".date_fix_applied_v5"):
-    from app.database import SessionLocal, engine
-    from app.models import EmailMessage, EmailThread, ScheduledReply, AuditLog
-    db = SessionLocal()
-    try:
-        # Drop child tables first to respect constraints, then drop parents
-        ScheduledReply.__table__.drop(bind=engine, checkfirst=True)
-        AuditLog.__table__.drop(bind=engine, checkfirst=True)
-        EmailMessage.__table__.drop(bind=engine, checkfirst=True)
-        EmailThread.__table__.drop(bind=engine, checkfirst=True)
-        
-        # Recreate tables immediately with new schema columns
-        Base.metadata.create_all(bind=engine)
-        print("Database tables recreated successfully for v5 phishing alert schema.")
-        
-        with open(".date_fix_applied_v5", "w") as f:
-            f.write("fixed")
-    except Exception as e:
-        print(f"Error executing v5 table recreation migration: {e}")
-    finally:
-        db.close()
 
 # 2. Configure Lifespan Manager for Background Threads
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup actions
-    print("Starting ReplyBridge backend application...")
+    print("Starting ReplyBridge backend application (Zero-Database / In-Memory Mode)...")
     sync_thread, scheduler_thread = start_background_workers()
     
     yield
@@ -47,7 +23,6 @@ async def lifespan(app: FastAPI):
     # Shutdown actions
     print("Shutting down ReplyBridge backend application...")
     stop_background_workers()
-    # Give threads a second to finish loops
     sync_thread.join(timeout=2.0)
     scheduler_thread.join(timeout=2.0)
     print("Background worker threads terminated.")
@@ -61,8 +36,6 @@ app = FastAPI(
 )
 
 # 4. Configure CORS
-# Next.js frontend runs on http://localhost:3000
-# We MUST allow credentials (cookies) and specify the exact origin
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -70,7 +43,8 @@ app.add_middleware(
         "http://localhost:3050",
         "http://localhost:3000",
         "http://127.0.0.1:3000",
-        "http://127.0.0.1:3050"
+        "http://127.0.0.1:3050",
+        "https://replybridge-frontend.onrender.com"
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -88,10 +62,10 @@ def read_root():
     return {
         "status": "online",
         "app_name": settings.APP_NAME,
+        "database_mode": "in-memory (zero database dependency)",
         "api_prefix": "/api",
         "message": "AI Email Auto-Reply Agent is running."
     }
 
 if __name__ == "__main__":
-    # Convenience execution when run directly
     uvicorn.run("main:app", host="0.0.0.0", port=settings.PORT, reload=True)
